@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_2" data-name="Layer 2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 125.39 110.7">
+  <defs>
+    <style>
+      .cls-1 {
+        fill: #009245;
+        stroke: #fff;
+      }
+    </style>
+  </defs>
+  <g id="solfège_-_Vertical" data-name="solfège - Vertical">
+    <g id="hex_fa_0">
+      <g id="Layer_34_copy" data-name="Layer 34 copy">
+        <path id="fa" class="cls-1" d="M35.29.5h54.82c2.64,0,5.07,1.41,6.39,3.69l27.41,47.47c1.32,2.28,1.32,5.09,0,7.38l-27.41,47.47c-1.32,2.28-3.75,3.69-6.39,3.69h-54.82c-2.64,0-5.07-1.41-6.39-3.69L1.49,59.04c-1.32-2.28-1.32-5.09,0-7.38L28.9,4.19c1.32-2.28,3.75-3.69,6.39-3.69Z"/>
+      </g>
+    </g>
+  </g>
+</svg>

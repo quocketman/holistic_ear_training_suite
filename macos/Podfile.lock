@@ -1,0 +1,47 @@
+PODS:
+  - audio_session (0.0.1):
+    - FlutterMacOS
+  - audioplayers_darwin (0.0.1):
+    - FlutterMacOS
+  - flutter_soloud (0.0.1):
+    - FlutterMacOS
+  - FlutterMacOS (1.0.0)
+  - just_audio (0.0.1):
+    - Flutter
+    - FlutterMacOS
+  - objective_c (0.0.1):
+    - FlutterMacOS
+
+DEPENDENCIES:
+  - audio_session (from `Flutter/ephemeral/.symlinks/plugins/audio_session/macos`)
+  - audioplayers_darwin (from `Flutter/ephemeral/.symlinks/plugins/audioplayers_darwin/macos`)
+  - flutter_soloud (from `Flutter/ephemeral/.symlinks/plugins/flutter_soloud/macos`)
+  - FlutterMacOS (from `Flutter/ephemeral`)
+  - just_audio (from `Flutter/ephemeral/.symlinks/plugins/just_audio/darwin`)
+  - objective_c (from `Flutter/ephemeral/.symlinks/plugins/objective_c/macos`)
+
+EXTERNAL SOURCES:
+  audio_session:
+    :path: Flutter/ephemeral/.symlinks/plugins/audio_session/macos
+  audioplayers_darwin:
+    :path: Flutter/ephemeral/.symlinks/plugins/audioplayers_darwin/macos
+  flutter_soloud:
+    :path: Flutter/ephemeral/.symlinks/plugins/flutter_soloud/macos
+  FlutterMacOS:
+    :path: Flutter/ephemeral
+  just_audio:
+    :path: Flutter/ephemeral/.symlinks/plugins/just_audio/darwin
+  objective_c:
+    :path: Flutter/ephemeral/.symlinks/plugins/objective_c/macos
+
+SPEC CHECKSUMS:
+  audio_session: eaca2512cf2b39212d724f35d11f46180ad3a33e
+  audioplayers_darwin: 761f2948df701d05b5db603220c384fb55720012
+  flutter_soloud: ac107e865a1098789906160f086f4c3efca01b22
+  FlutterMacOS: d0db08ddef1a9af05a5ec4b724367152bb0500b1
+  just_audio: 4e391f57b79cad2b0674030a00453ca5ce817eed
+  objective_c: ec13431e45ba099cb734eb2829a5c1cd37986cba
+
+PODFILE CHECKSUM: 54d867c82ac51cbd61b565781b9fada492027009
+
+COCOAPODS: 1.16.2

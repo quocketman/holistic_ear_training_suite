@@ -1,0 +1,44 @@
+name: ear_training_app
+description: A Flutter-based ear training application for practicing musical ear training skills.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # Audio playback libraries
+  just_audio: ^0.9.36
+  audioplayers: ^5.2.1
+  flutter_soloud: ^2.0.0
+  
+  # State management
+  provider: ^6.1.1
+  
+  # Path provider for temp files
+  path_provider: ^2.1.1
+  
+  # SVG support for ToneToken graphics
+  flutter_svg: ^2.0.9
+  
+  # UI components
+  cupertino_icons: ^1.0.6
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
+  
+  assets:
+    # Hexagon SVG graphics for ToneTokens
+    - assets/hexagons/
+    # Uncomment and add your audio assets here
+    # - assets/audio/intervals/
+    # - assets/audio/chords/
+    # - assets/audio/rhythms/
