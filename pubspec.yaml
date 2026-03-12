@@ -15,6 +15,9 @@ dependencies:
   audioplayers: ^5.2.1
   flutter_soloud: ^2.0.0
   
+  # Web support
+  web: ^1.0.0
+  
   # State management
   provider: ^6.1.1
   

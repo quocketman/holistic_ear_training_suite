@@ -1,77 +1,77 @@
 import 'package:just_audio/just_audio.dart';
-import 'package:flutter_soloud/flutter_soloud.dart';
 import 'dart:math' as math;
 
+import 'audio/audio_synthesizer.dart';
+import 'audio/audio_synthesizer_factory.dart';
+import '../models/synth_parameters.dart';
+
+// Re-export NoteHandle for external use
+export 'audio/audio_synthesizer.dart' show NoteHandle;
+
 /// Service for handling audio playback in ear training exercises
+/// Supports web, iOS, Android, macOS, Windows, and Linux
 class AudioService {
   final AudioPlayer _audioPlayer = AudioPlayer();
-  static SoLoud? _soloud;
+  static AudioSynthesizer? _synthesizer;
   static bool _isInitialized = false;
-  
+
+  /// Global synth parameters - shared across all screens
+  static final SynthParameters globalSynthParams = SynthParameters();
+
   /// Initialize the audio synthesizer
   static Future<void> initialize() async {
     if (_isInitialized) return;
-    
+
     try {
-      _soloud = SoLoud.instance;
-      
-      // Initialize SoLoud
-      await _soloud!.init();
-      
+      _synthesizer = createAudioSynthesizer();
+      await _synthesizer!.initialize();
       _isInitialized = true;
-      print('SoLoud initialized successfully');
+      print('Audio service initialized successfully');
     } catch (e) {
-      print('Error initializing SoLoud: $e');
+      print('Error initializing audio: $e');
     }
   }
-  
-  /// Play a synthesized tone at a specific MIDI note number
-  /// duration in milliseconds
-  Future<void> playTone(int midiNote, {int duration = 500}) async {
-    print('playTone called with MIDI note: $midiNote');
-    
-    if (!_isInitialized || _soloud == null) {
-      print('SoLoud not initialized, initializing now...');
+
+  /// Start a note that sustains until released
+  /// Returns a NoteHandle that must be used to release the note
+  Future<NoteHandle?> noteOn(int midiNote, {SynthParameters? params}) async {
+    if (!_isInitialized || _synthesizer == null) {
       await initialize();
     }
-    
+
+    try {
+      final frequency = 440.0 * math.pow(2, (midiNote - 69) / 12);
+      final synthParams = params ?? globalSynthParams;
+      return await _synthesizer!.noteOn(frequency, synthParams);
+    } catch (e) {
+      print('Error starting note: $e');
+      return null;
+    }
+  }
+
+  /// Play a synthesized tone at a specific MIDI note number (fixed duration)
+  /// Uses either provided params or the global synth parameters
+  Future<void> playTone(int midiNote, {SynthParameters? params}) async {
+    print('playTone called with MIDI note: $midiNote');
+
+    if (!_isInitialized || _synthesizer == null) {
+      print('Audio not initialized, initializing now...');
+      await initialize();
+    }
+
     try {
       // Convert MIDI note to frequency: f = 440 * 2^((n-69)/12)
       final frequency = 440.0 * math.pow(2, (midiNote - 69) / 12);
       print('Calculated frequency: $frequency Hz');
-      
-      // Load and play a basic waveform (square wave)
-      print('Loading waveform...');
-      final sound = await _soloud!.loadWaveform(
-        WaveForm.square,
-        false, // superWave
-        0.5,   // scale/amplitude
-        0.0,   // detune
-      );
-      print('Waveform loaded, playing...');
-      
-      final handle = await _soloud!.play(
-        sound,
-        volume: 0.5,
-      );
-      print('Playing with handle: $handle');
-      
-      // Adjust pitch to match MIDI note frequency
-      // Middle C (MIDI 60) = 261.63 Hz, use as reference
-      _soloud!.setRelativePlaySpeed(handle, frequency / 261.63);
-      print('Set relative play speed: ${frequency / 261.63}');
-      
-      // Schedule cleanup without blocking
-      Future.delayed(Duration(milliseconds: duration)).then((_) {
-        _soloud!.stop(handle);
-        _soloud!.disposeSource(sound);
-        print('Tone finished and disposed');
-      });
+
+      // Use provided params or fall back to global params
+      final synthParams = params ?? globalSynthParams;
+      await _synthesizer!.playTone(frequency, synthParams);
     } catch (e) {
       print('Error playing tone: $e');
     }
   }
-  
+
   /// Play an audio file from assets
   Future<void> playAudio(String assetPath) async {
     try {
@@ -111,12 +111,13 @@ class AudioService {
   void dispose() {
     _audioPlayer.dispose();
   }
-  
+
   /// Clean up synthesizer resources
   static Future<void> cleanup() async {
-    if (_isInitialized && _soloud != null) {
-      _soloud!.deinit();
-      _isInitialized = false;
+    if (_synthesizer != null) {
+      await _synthesizer!.dispose();
+      _synthesizer = null;
     }
+    _isInitialized = false;
   }
 }

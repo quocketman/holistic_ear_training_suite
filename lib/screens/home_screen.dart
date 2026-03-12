@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'tone_token_demo_screen.dart';
+import 'sound_design_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -17,77 +18,53 @@ class HomeScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-            const SizedBox(height: 20),
-            const Text(
-              'Welcome to Ear Training!',
-              style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
+              const SizedBox(height: 20),
+              const Text(
+                'Welcome to Ear Training!',
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                ),
+                textAlign: TextAlign.center,
               ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 10),
-            const Text(
-              'Select an exercise to begin practicing',
-              style: TextStyle(fontSize: 16, color: Colors.grey),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 40),
-            _buildExerciseCard(
-              context,
-              title: 'ToneToken Demo',
-              description: 'View and interact with ToneToken graphics',
-              icon: Icons.grid_on,
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const ToneTokenDemoScreen(),
-                  ),
-                );
-              },
-            ),
-            const SizedBox(height: 16),
-            _buildExerciseCard(
-              context,
-              title: 'Interval Recognition',
-              description: 'Practice identifying musical intervals',
-              icon: Icons.music_note,
-              onTap: () {
-                // TODO: Navigate to interval exercise
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Coming soon!')),
-                );
-              },
-            ),
-            const SizedBox(height: 16),
-            _buildExerciseCard(
-              context,
-              title: 'Chord Identification',
-              description: 'Learn to recognize different chord types',
-              icon: Icons.piano,
-              onTap: () {
-                // TODO: Navigate to chord exercise
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Coming soon!')),
-                );
-              },
-            ),
-            const SizedBox(height: 16),
-            _buildExerciseCard(
-              context,
-              title: 'Rhythm Training',
-              description: 'Develop your sense of rhythm and timing',
-              icon: Icons.graphic_eq,
-              onTap: () {
-                // TODO: Navigate to rhythm exercise
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Coming soon!')),
-                );
-              },
-            ),
-          ],
-        ),
+              const SizedBox(height: 10),
+              const Text(
+                'Select an exercise to begin practicing',
+                style: TextStyle(fontSize: 16, color: Colors.grey),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 40),
+              _buildExerciseCard(
+                context,
+                title: 'ToneToken Demo',
+                description: 'View and interact with ToneToken graphics',
+                icon: Icons.grid_on,
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const ToneTokenDemoScreen(),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 16),
+              _buildExerciseCard(
+                context,
+                title: 'Sound Design',
+                description: 'Customize tone and audio settings',
+                icon: Icons.tune,
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const SoundDesignScreen(),
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
         ),
       ),
     );

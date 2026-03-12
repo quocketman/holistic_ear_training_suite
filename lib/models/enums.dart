@@ -86,6 +86,6 @@ enum PitchClass {
 
 /// Orientation of hexagon tokens
 enum HexagonOrientation {
-  flatTop,   // Horizontal orientation (flat side on top)
+  flatTop, // Horizontal orientation (flat side on top)
   pointyTop; // Vertical orientation (point on top)
 }

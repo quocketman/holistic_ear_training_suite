@@ -18,6 +18,9 @@ class _ToneTokenDemoScreenState extends State<ToneTokenDemoScreen> {
   String _currentLayout = 'vertical';
   final AudioService _audioService = AudioService();
 
+  // Track active notes for sustain/release
+  final Map<NoteNugget, NoteHandle> _activeNotes = {};
+
   // Create a full chromatic scale of NoteNuggets
   // Mapped to proper scale degrees and alterations for all 12 chromatic pitches
   final List<NoteNugget> _chromaticScale = [
@@ -184,7 +187,8 @@ class _ToneTokenDemoScreenState extends State<ToneTokenDemoScreen> {
                           noteNugget: entry.value,
                           size: tokenSize,
                           orientation: HexagonOrientation.flatTop,
-                          onTap: () => _onTokenTap(entry.value),
+                          onTapDown: () => _onNoteOn(entry.value),
+                          onTapUp: () => _onNoteOff(entry.value),
                         ),
                       ))
                   .toList(),
@@ -206,7 +210,8 @@ class _ToneTokenDemoScreenState extends State<ToneTokenDemoScreen> {
                             noteNugget: entry.value,
                             size: tokenSize,
                             orientation: HexagonOrientation.flatTop,
-                            onTap: () => _onTokenTap(entry.value),
+                            onTapDown: () => _onNoteOn(entry.value),
+                            onTapUp: () => _onNoteOff(entry.value),
                           ),
                         ))
                     .toList(),
@@ -241,7 +246,8 @@ class _ToneTokenDemoScreenState extends State<ToneTokenDemoScreen> {
                         noteNugget: nugget,
                         size: 80,
                         orientation: HexagonOrientation.pointyTop,
-                        onTap: () => _onTokenTap(nugget),
+                        onTapDown: () => _onNoteOn(nugget),
+                        onTapUp: () => _onNoteOff(nugget),
                       ),
                     ))
                 .toList(),
@@ -260,7 +266,8 @@ class _ToneTokenDemoScreenState extends State<ToneTokenDemoScreen> {
                         noteNugget: nugget,
                         size: 80,
                         orientation: HexagonOrientation.pointyTop,
-                        onTap: () => _onTokenTap(nugget),
+                        onTapDown: () => _onNoteOn(nugget),
+                        onTapUp: () => _onNoteOff(nugget),
                       ),
                     ))
                 .toList(),
@@ -270,13 +277,16 @@ class _ToneTokenDemoScreenState extends State<ToneTokenDemoScreen> {
     );
   }
 
-  void _onTokenTap(NoteNugget nugget) {
+  void _onNoteOn(NoteNugget nugget) async {
     final musicalState = context.read<MusicalState>();
-    final solfege = nugget.getBaseSolfege(); // Use fixed chromatic solfège
+    final solfege = nugget.getBaseSolfege();
     final midiNote = musicalState.getMidiNote(nugget);
     
-    // Play the tone
-    _audioService.playTone(midiNote);
+    // Start the note and store the handle
+    final handle = await _audioService.noteOn(midiNote, params: AudioService.globalSynthParams);
+    if (handle != null) {
+      _activeNotes[nugget] = handle;
+    }
     
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -288,9 +298,20 @@ class _ToneTokenDemoScreenState extends State<ToneTokenDemoScreen> {
       ),
     );
   }
+
+  void _onNoteOff(NoteNugget nugget) {
+    // Release the note if it's active
+    final handle = _activeNotes.remove(nugget);
+    handle?.release();
+  }
   
   @override
   void dispose() {
+    // Release any active notes
+    for (final handle in _activeNotes.values) {
+      handle.release();
+    }
+    _activeNotes.clear();
     _audioService.dispose();
     super.dispose();
   }

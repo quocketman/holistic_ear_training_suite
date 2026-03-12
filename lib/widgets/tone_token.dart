@@ -12,6 +12,10 @@ class ToneToken extends StatelessWidget {
   final NoteNugget noteNugget;
   final double size;
   final HexagonOrientation orientation;
+  final VoidCallback? onTapDown;
+  final VoidCallback? onTapUp;
+  
+  /// Legacy callback - triggers on tap down for backwards compatibility
   final VoidCallback? onTap;
 
   const ToneToken({
@@ -20,6 +24,8 @@ class ToneToken extends StatelessWidget {
     this.size = 80.0,
     this.orientation = HexagonOrientation.flatTop,
     this.onTap,
+    this.onTapDown,
+    this.onTapUp,
   });
   @override
   Widget build(BuildContext context) {
@@ -36,7 +42,12 @@ class ToneToken extends StatelessWidget {
         : 0.0;
 
     return GestureDetector(
-      onTap: onTap,
+      onTapDown: (_) {
+        onTapDown?.call();
+        onTap?.call(); // Legacy support
+      },
+      onTapUp: (_) => onTapUp?.call(),
+      onTapCancel: () => onTapUp?.call(), // Release on cancel too
       child: SizedBox(
         width: size,
         height: size,
