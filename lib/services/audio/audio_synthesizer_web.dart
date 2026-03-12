@@ -28,14 +28,14 @@ class WebNoteHandle implements NoteHandle {
 
     // Cancel any scheduled ramps - this is crucial to avoid clicks
     gainNode.gain.cancelScheduledValues(currentTime);
-    
+
     // Get the actual current gain value (may be mid-attack or mid-decay)
     // This avoids the click from jumping to sustainLevel
     final currentGain = gainNode.gain.value;
-    
+
     // Set from actual current value, not the scheduled sustain level
     gainNode.gain.setValueAtTime(currentGain, currentTime);
-    
+
     // Ramp to zero over the release time
     gainNode.gain.linearRampToValueAtTime(0.0, currentTime + releaseTime);
 
@@ -146,7 +146,7 @@ class AudioSynthesizerImpl implements AudioSynthesizer {
   Future<void> playTone(double frequency, SynthParameters params) async {
     // Fixed duration playback (for backwards compatibility)
     final handle = await noteOn(frequency, params);
-    
+
     // Auto-release after sustain duration
     Future.delayed(const Duration(milliseconds: 200), () {
       handle.release();

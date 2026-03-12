@@ -36,8 +36,8 @@ class HomeScreen extends StatelessWidget {
               const SizedBox(height: 40),
               _buildExerciseCard(
                 context,
-                title: 'ToneToken Demo',
-                description: 'View and interact with ToneToken graphics',
+                title: 'PRACTICE',
+                description: 'Ear training exercises with ToneTokens',
                 icon: Icons.grid_on,
                 onTap: () {
                   Navigator.push(
@@ -51,8 +51,8 @@ class HomeScreen extends StatelessWidget {
               const SizedBox(height: 16),
               _buildExerciseCard(
                 context,
-                title: 'Sound Design',
-                description: 'Customize tone and audio settings',
+                title: 'PLAY',
+                description: 'Free play with customizable synth sounds',
                 icon: Icons.tune,
                 onTap: () {
                   Navigator.push(
