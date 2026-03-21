@@ -23,7 +23,11 @@ class EarTrainingApp extends StatelessWidget {
       child: MaterialApp(
         title: 'Ear Training',
         theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: Colors.deepPurple,
+            brightness: Brightness.dark,
+          ),
+          scaffoldBackgroundColor: Colors.black,
           useMaterial3: true,
         ),
         home: const HomeScreen(),

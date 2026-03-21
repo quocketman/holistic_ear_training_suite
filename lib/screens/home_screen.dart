@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'tone_token_demo_screen.dart';
+import 'practice_screen.dart';
 import 'sound_design_screen.dart';
 
 class HomeScreen extends StatelessWidget {
@@ -43,7 +43,7 @@ class HomeScreen extends StatelessWidget {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => const ToneTokenDemoScreen(),
+                      builder: (context) => PracticeScreen(),
                     ),
                   );
                 },
