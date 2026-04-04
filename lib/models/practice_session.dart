@@ -24,6 +24,7 @@ class PracticeSession extends ChangeNotifier {
   int _wrongAttemptsOnCurrentQuestion = 0;
   int _questionsAnswered = 0;
   int _totalPoints = 0;
+  int _seriesIndex = 0;
 
   PracticeSession({
     required this.levelSpecs,
@@ -46,7 +47,14 @@ class PracticeSession extends ChangeNotifier {
   int get questionsAnswered => _questionsAnswered;
 
   /// Whether all questions in the round have been answered.
-  bool get roundComplete => _questionsAnswered >= levelSpecs.questionsPerRound;
+  bool get roundComplete {
+    final series = levelSpecs.simpleNuggetSeries;
+    if (series != null &&
+        levelSpecs.puzzleGenerationMethod == PuzzleGenerationMethod.seriesForwardOnly) {
+      return _seriesIndex >= series.length;
+    }
+    return _questionsAnswered >= levelSpecs.questionsPerRound;
+  }
 
   /// Whether the player has cleared the level (may progress).
   bool get roundCleared => _totalPoints >= levelSpecs.pointsToClear;
@@ -57,6 +65,13 @@ class PracticeSession extends ChangeNotifier {
   /// How many wrong taps have been made on the current question.
   /// Resets when [nextQuestion] is called.
   int get wrongAttemptsOnCurrentQuestion => _wrongAttemptsOnCurrentQuestion;
+
+  /// Points the current question is worth given wrong attempts so far.
+  int get currentQuestionPoints {
+    final tiers = levelSpecs.pointTiers;
+    final index = _wrongAttemptsOnCurrentQuestion.clamp(0, tiers.length - 1);
+    return tiers[index];
+  }
 
   // ── Session control ─────────────────────────────────────────────────────────
 
@@ -77,7 +92,9 @@ class PracticeSession extends ChangeNotifier {
       _lastResult = AnswerResult.correct;
       _correctCount++;
       _questionsAnswered++;
-      _totalPoints += _pointsForCurrentQuestion();
+      if (levelSpecs.levelType != LevelType.warmUp) {
+        _totalPoints += _pointsForCurrentQuestion();
+      }
       notifyListeners();
       return AnswerResult.correct;
     } else {
@@ -105,6 +122,7 @@ class PracticeSession extends ChangeNotifier {
     _lastResult = null;
     _lastQuestion = null;
     _currentQuestion = null;
+    _seriesIndex = 0;
     _dispenser.resetIndex();
     nextQuestion();
   }
@@ -114,24 +132,32 @@ class PracticeSession extends ChangeNotifier {
   NoteNugget? _pickNextNugget() {
     if (_dispenser.isEmpty) return null;
 
-    // Always start with the preferred first note if this is the opening question.
-    if (_lastQuestion == null && levelSpecs.preferredFirstNote != null) {
+    // Always start with the preferred first note if this is the opening question
+    // (unless a simpleNuggetSeries already defines the sequence).
+    if (_lastQuestion == null &&
+        levelSpecs.preferredFirstNote != null &&
+        levelSpecs.simpleNuggetSeries == null) {
       _lastQuestion = levelSpecs.preferredFirstNote;
       return levelSpecs.preferredFirstNote;
     }
 
     NoteNugget? candidate;
-    int attempts = 0;
-    const maxAttempts = 10;
 
-    do {
+    // Series-based levels should not retry — the sequence is fixed.
+    if (levelSpecs.simpleNuggetSeries != null) {
       candidate = _selectByMethod();
-      attempts++;
-    } while (
-      levelSpecs.noTwiceInARow &&
-      candidate == _lastQuestion &&
-      attempts < maxAttempts
-    );
+    } else {
+      int attempts = 0;
+      const maxAttempts = 10;
+      do {
+        candidate = _selectByMethod();
+        attempts++;
+      } while (
+        levelSpecs.noTwiceInARow &&
+        candidate == _lastQuestion &&
+        attempts < maxAttempts
+      );
+    }
 
     _lastQuestion = candidate;
     return candidate;
@@ -143,6 +169,14 @@ class PracticeSession extends ChangeNotifier {
         return _dispenser.randomNoteNugget;
 
       case PuzzleGenerationMethod.seriesForwardOnly:
+        final series = levelSpecs.simpleNuggetSeries;
+        if (series != null) {
+          if (_seriesIndex >= series.length) return null;
+          final degree = series[_seriesIndex];
+          _seriesIndex++;
+          return levelSpecs.availableNoteNuggets
+              .firstWhere((n) => n.scaleDegree == degree);
+        }
         return _dispenser.nextNoteNugget;
 
       case PuzzleGenerationMethod.seriesForwardAndBack:

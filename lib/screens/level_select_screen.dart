@@ -27,7 +27,7 @@ class LevelSelectScreen extends StatelessWidget {
             itemCount: levels.length,
             itemBuilder: (context, index) {
               final level = levels[index];
-              return _LevelCard(level: level, index: index);
+              return _LevelCard(level: level, allLevels: levels, index: index);
             },
           );
         },
@@ -38,9 +38,10 @@ class LevelSelectScreen extends StatelessWidget {
 
 class _LevelCard extends StatelessWidget {
   final LevelSpecs level;
+  final List<LevelSpecs> allLevels;
   final int index;
 
-  const _LevelCard({required this.level, required this.index});
+  const _LevelCard({required this.level, required this.allLevels, required this.index});
 
   @override
   Widget build(BuildContext context) {
@@ -67,7 +68,7 @@ class _LevelCard extends StatelessWidget {
             Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (context) => PracticeScreen(levelSpecs: level),
+                builder: (context) => PracticeScreen(levelSpecs: level, allLevels: allLevels, currentLevelIndex: index),
               ),
             );
           },

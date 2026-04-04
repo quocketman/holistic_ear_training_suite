@@ -15,6 +15,7 @@ class ToneToken extends StatefulWidget {
   final VoidCallback? onTapDown;
   final VoidCallback? onTapUp;
   final bool glowing;
+  final bool outlineOnly;
 
   /// Legacy callback - triggers on tap down for backwards compatibility
   final VoidCallback? onTap;
@@ -28,6 +29,7 @@ class ToneToken extends StatefulWidget {
     this.onTapDown,
     this.onTapUp,
     this.glowing = false,
+    this.outlineOnly = false,
   });
 
   @override
@@ -118,19 +120,40 @@ class _ToneTokenState extends State<ToneToken>
               child: Stack(
                 alignment: Alignment.center,
                 children: [
-                  SvgPicture.asset(
-                    'assets/hexagons/hex_00.svg',
-                    width: widget.size,
-                    height: widget.size,
-                    fit: BoxFit.contain,
-                    colorFilter: ColorFilter.mode(hexColor, BlendMode.srcIn),
-                  ),
-                  SvgPicture.asset(
-                    'assets/hexagons/hex_outline.svg',
-                    width: widget.size,
-                    height: widget.size,
-                    fit: BoxFit.contain,
-                  ),
+                  if (widget.outlineOnly) ...[
+                    // Black fill
+                    SvgPicture.asset(
+                      'assets/hexagons/hex_00.svg',
+                      width: widget.size,
+                      height: widget.size,
+                      fit: BoxFit.contain,
+                      colorFilter: const ColorFilter.mode(Colors.black, BlendMode.srcIn),
+                    ),
+                    // Thick colored outline
+                    SvgPicture.asset(
+                      'assets/hexagons/hex_outline_thick.svg',
+                      width: widget.size,
+                      height: widget.size,
+                      fit: BoxFit.contain,
+                      colorFilter: ColorFilter.mode(hexColor, BlendMode.srcIn),
+                    ),
+                  ] else ...[
+                    // Colored fill
+                    SvgPicture.asset(
+                      'assets/hexagons/hex_00.svg',
+                      width: widget.size,
+                      height: widget.size,
+                      fit: BoxFit.contain,
+                      colorFilter: ColorFilter.mode(hexColor, BlendMode.srcIn),
+                    ),
+                    // Thin white outline
+                    SvgPicture.asset(
+                      'assets/hexagons/hex_outline.svg',
+                      width: widget.size,
+                      height: widget.size,
+                      fit: BoxFit.contain,
+                    ),
+                  ],
                   Transform.rotate(
                     angle: -rotationAngle,
                     child: Text(

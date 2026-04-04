@@ -6,6 +6,9 @@ class ToneTokenColors {
   // Private constructor to prevent instantiation
   ToneTokenColors._();
 
+  /// The color of fa — used for "go/advance" buttons throughout the app.
+  static Color get faColor => _colorMap[5]!;
+
   /// Get color for a chromatic offset (0-11)
   static Color getColor(int chromaticOffset) {
     // Ensure offset is within valid range

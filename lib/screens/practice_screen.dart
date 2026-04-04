@@ -5,6 +5,7 @@ import '../models/note_nugget.dart';
 import '../models/level_specs.dart';
 import '../models/musical_state.dart';
 import '../models/practice_session.dart';
+import '../models/tone_token_colors.dart';
 import '../services/audio_service.dart';
 import '../widgets/tone_token.dart';
 import '../models/enums.dart';
@@ -51,11 +52,23 @@ final _defaultLevelSpecs = LevelSpecs(
 
 class PracticeScreen extends StatefulWidget {
   final LevelSpecs levelSpecs;
+  final List<LevelSpecs>? allLevels;
+  final int? currentLevelIndex;
 
   PracticeScreen({
     super.key,
     LevelSpecs? levelSpecs,
+    this.allLevels,
+    this.currentLevelIndex,
   }) : levelSpecs = levelSpecs ?? _defaultLevelSpecs;
+
+  LevelSpecs? get nextLevelSpecs {
+    if (allLevels != null && currentLevelIndex != null &&
+        currentLevelIndex! + 1 < allLevels!.length) {
+      return allLevels![currentLevelIndex! + 1];
+    }
+    return null;
+  }
 
   @override
   State<PracticeScreen> createState() => _PracticeScreenState();
@@ -66,11 +79,14 @@ class _PracticeScreenState extends State<PracticeScreen> {
   late final PracticeSession _session;
   bool _pulsing = false;
   bool _sessionStarted = false;
+  bool _roundActive = false;
   bool _sequencePlaying = false;
   bool _showRoundEnd = false;
   NoteNugget? _glowingNugget;
   NoteNugget? _wrongNugget;
   OverlayEntry? _splashEntry;
+  bool _hideQuestionPoints = false;
+  final GlobalKey _playButtonKey = GlobalKey();
 
   /// Stable GlobalKeys for each token in the chromatic scale.
   late final Map<NoteNugget, GlobalKey> _tokenKeys;
@@ -105,6 +121,10 @@ class _PracticeScreenState extends State<PracticeScreen> {
           if (!_session.roundComplete) {
             _session.nextQuestion();
             _playCurrentQuestion();
+          } else if (widget.levelSpecs.levelType == LevelType.warmUp) {
+            // Warm-ups loop — restart the series automatically.
+            _session.restart();
+            _playCurrentQuestion();
           } else {
             Future.delayed(const Duration(milliseconds: 1000), () {
               if (mounted) setState(() => _showRoundEnd = true);
@@ -117,9 +137,22 @@ class _PracticeScreenState extends State<PracticeScreen> {
     }
   }
 
+  Color get _questionTokenColor {
+    if (!_roundActive || widget.levelSpecs.levelType != LevelType.warmUp) {
+      return Colors.white;
+    }
+    final question = _session.currentQuestion;
+    if (question == null) return Colors.white;
+    final mode = context.read<MusicalState>().currentMode;
+    return ToneTokenColors.getColor(question.getChromaticOffset(mode));
+  }
+
   void _startOrReplay() {
     if (!_sessionStarted) {
-      setState(() => _sessionStarted = true);
+      setState(() {
+        _sessionStarted = true;
+        _roundActive = true;
+      });
     }
     _playCurrentQuestion();
   }
@@ -129,7 +162,7 @@ class _PracticeScreenState extends State<PracticeScreen> {
     if (question == null) return;
     final musicalState = context.read<MusicalState>();
     final midiNote = musicalState.getMidiNote(question);
-    setState(() => _pulsing = true);
+    setState(() { _pulsing = true; _hideQuestionPoints = false; });
     await _audioService.playTone(midiNote);
     Future.delayed(const Duration(milliseconds: 450), () {
       if (mounted) setState(() => _pulsing = false);
@@ -153,6 +186,14 @@ class _PracticeScreenState extends State<PracticeScreen> {
     final levelNugget = _resolveToLevelNugget(gridNugget);
     if (levelNugget == null) return;
 
+    // Before round begins, just let the user explore the sounds.
+    if (!_roundActive) {
+      final musicalState = context.read<MusicalState>();
+      _audioService.playTone(musicalState.getMidiNote(levelNugget));
+      return;
+    }
+
+    final pointsBeforeAnswer = _session.currentQuestionPoints;
     final result = _session.submitAnswer(levelNugget);
 
     if (result == AnswerResult.correct) {
@@ -160,10 +201,17 @@ class _PracticeScreenState extends State<PracticeScreen> {
         final musicalState = context.read<MusicalState>();
         _audioService.playTone(musicalState.getMidiNote(levelNugget));
       }
-      setState(() => _glowingNugget = levelNugget);
-      _showSplash(gridNugget);
+      setState(() {
+        _glowingNugget = levelNugget;
+        _hideQuestionPoints = true;
+      });
+      if (widget.levelSpecs.levelType == LevelType.warmUp) {
+        _flyHexToToken(gridNugget);
+      } else {
+        _flyPointsToToken(gridNugget, pointsBeforeAnswer);
+      }
     } else {
-      _playWrongSequence(gridNugget);
+      _playWrongSequence(levelNugget);
     }
   }
 
@@ -192,23 +240,65 @@ class _PracticeScreenState extends State<PracticeScreen> {
     setState(() { _wrongNugget = null; _sequencePlaying = false; });
   }
 
-  void _showSplash(NoteNugget nugget) {
-    final key = _tokenKeys[nugget];
-    if (key == null) return;
-    final box = key.currentContext?.findRenderObject() as RenderBox?;
-    if (box == null) return;
-    final pos = box.localToGlobal(Offset.zero);
-    final size = box.size;
-    final center = Offset(pos.dx + size.width / 2, pos.dy + size.height / 2);
+  void _flyPointsToToken(NoteNugget nugget, int points) {
+    final playBox = _playButtonKey.currentContext?.findRenderObject() as RenderBox?;
+    if (playBox == null) return;
+    final playPos = playBox.localToGlobal(Offset.zero);
+    final playSize = playBox.size;
+    final from = Offset(playPos.dx + playSize.width / 2, playPos.dy + playSize.height / 2);
 
-    final musicalState = context.read<MusicalState>();
-    final solfege = musicalState.solfegeFromCurrentKey(nugget);
+    final tokenKey = _tokenKeys[nugget];
+    if (tokenKey == null) return;
+    final tokenBox = tokenKey.currentContext?.findRenderObject() as RenderBox?;
+    if (tokenBox == null) return;
+    final tokenPos = tokenBox.localToGlobal(Offset.zero);
+    final tokenSize = tokenBox.size;
+    final to = Offset(tokenPos.dx + tokenSize.width / 2, tokenPos.dy + tokenSize.height / 2);
+
+    final mode = context.read<MusicalState>().currentMode;
+    final color = ToneTokenColors.getColor(nugget.getChromaticOffset(mode));
 
     _splashEntry?.remove();
     _splashEntry = OverlayEntry(
-      builder: (_) => _SplashEffect(
-        center: center,
-        label: solfege,
+      builder: (_) => _HexFlyEffect(
+        from: from,
+        to: to,
+        color: color,
+        size: 80.0,
+        label: '+$points',
+        onDone: () {
+          _splashEntry?.remove();
+          _splashEntry = null;
+        },
+      ),
+    );
+    Overlay.of(context).insert(_splashEntry!);
+  }
+
+  void _flyHexToToken(NoteNugget nugget) {
+    final playBox = _playButtonKey.currentContext?.findRenderObject() as RenderBox?;
+    if (playBox == null) return;
+    final playPos = playBox.localToGlobal(Offset.zero);
+    final playSize = playBox.size;
+    final from = Offset(playPos.dx + playSize.width / 2, playPos.dy + playSize.height / 2);
+
+    final tokenKey = _tokenKeys[nugget];
+    if (tokenKey == null) return;
+    final tokenBox = tokenKey.currentContext?.findRenderObject() as RenderBox?;
+    if (tokenBox == null) return;
+    final tokenPos = tokenBox.localToGlobal(Offset.zero);
+    final tokenSize = tokenBox.size;
+    final to = Offset(tokenPos.dx + tokenSize.width / 2, tokenPos.dy + tokenSize.height / 2);
+
+    final color = _questionTokenColor;
+
+    _splashEntry?.remove();
+    _splashEntry = OverlayEntry(
+      builder: (_) => _HexFlyEffect(
+        from: from,
+        to: to,
+        color: color,
+        size: 80.0,
         onDone: () {
           _splashEntry?.remove();
           _splashEntry = null;
@@ -235,10 +325,28 @@ class _PracticeScreenState extends State<PracticeScreen> {
                   padding: const EdgeInsets.all(16.0),
                   child: Column(
                     children: [
-                      _ScoreBar(session: session),
+                      if (widget.levelSpecs.levelType == LevelType.warmUp)
+                        Center(
+                          child: _WarmUpNextButton(onNextLevel: () {
+                            final next = widget.nextLevelSpecs;
+                            if (next != null) {
+                              Navigator.of(context).pushReplacement(
+                                MaterialPageRoute(
+                                  builder: (_) => PracticeScreen(
+                                    levelSpecs: next,
+                                    allLevels: widget.allLevels,
+                                    currentLevelIndex: widget.currentLevelIndex! + 1,
+                                  ),
+                                ),
+                              );
+                            } else {
+                              Navigator.of(context).pop();
+                            }
+                          }),
+                        )
+                      else
+                        _ScoreBar(session: session),
                       const SizedBox(height: 16),
-                      _FeedbackDisplay(result: session.lastResult),
-                      const SizedBox(height: 8),
                       Expanded(
                         child: _TokenGrid(
                           levelSpecs: widget.levelSpecs,
@@ -247,7 +355,14 @@ class _PracticeScreenState extends State<PracticeScreen> {
                           wrongNugget: _wrongNugget,
                           tokenKeys: _tokenKeys,
                           onTap: _onTokenTapped,
-                          playButton: _PlayButton(onPlay: _startOrReplay, pulsing: _pulsing),
+                          playButton: _PlayButton(
+                            key: _playButtonKey,
+                            onPlay: _startOrReplay,
+                            pulsing: _pulsing,
+                            showIcon: !_roundActive,
+                            color: _questionTokenColor,
+                            pointValue: _roundActive && !_hideQuestionPoints && widget.levelSpecs.levelType != LevelType.warmUp ? _session.currentQuestionPoints : null,
+                          ),
                         ),
                       ),
                       const SizedBox(height: 24),
@@ -258,9 +373,26 @@ class _PracticeScreenState extends State<PracticeScreen> {
                   _RoundEndOverlay(
                     session: session,
                     onRestart: () => setState(() {
-                _showRoundEnd = false;
-                _session.restart();
-              }),
+                      _showRoundEnd = false;
+                      _roundActive = false;
+                      _session.restart();
+                    }),
+                    onNextLevel: () {
+                      final next = widget.nextLevelSpecs;
+                      if (next != null) {
+                        Navigator.of(context).pushReplacement(
+                          MaterialPageRoute(
+                            builder: (_) => PracticeScreen(
+                                    levelSpecs: next,
+                                    allLevels: widget.allLevels,
+                                    currentLevelIndex: widget.currentLevelIndex! + 1,
+                                  ),
+                          ),
+                        );
+                      } else {
+                        Navigator.of(context).pop();
+                      }
+                    },
                   ),
               ],
             );
@@ -272,6 +404,29 @@ class _PracticeScreenState extends State<PracticeScreen> {
 }
 
 // ── Sub-widgets ───────────────────────────────────────────────────────────────
+
+class _WarmUpNextButton extends StatelessWidget {
+  final VoidCallback onNextLevel;
+  const _WarmUpNextButton({required this.onNextLevel});
+
+  @override
+  Widget build(BuildContext context) {
+    const size = 60.0;
+    return GestureDetector(
+      onTapDown: (_) => onNextLevel(),
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: CustomPaint(
+          painter: _HexFillPainter(ToneTokenColors.faColor),
+          child: const Center(
+            child: Icon(Icons.arrow_forward, color: Colors.black87, size: 28),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 class _ScoreBar extends StatelessWidget {
   final PracticeSession session;
@@ -292,7 +447,7 @@ class _ScoreBar extends StatelessWidget {
 
   Color _pointsColor(PracticeSession s, LevelSpecs specs) {
     if (s.roundMastered) return Colors.amber;
-    if (s.roundCleared) return Colors.greenAccent;
+    if (s.roundCleared) return ToneTokenColors.faColor;
     return Colors.white70;
   }
 
@@ -307,33 +462,14 @@ class _ScoreBar extends StatelessWidget {
   }
 }
 
-class _FeedbackDisplay extends StatelessWidget {
-  final AnswerResult? result;
-  const _FeedbackDisplay({required this.result});
-
-  @override
-  Widget build(BuildContext context) {
-    if (result == null) return const SizedBox(height: 40);
-    final isCorrect = result == AnswerResult.correct;
-    return SizedBox(
-      height: 40,
-      child: Text(
-        isCorrect ? '✓' : '✗',
-        style: TextStyle(
-          fontSize: 32,
-          color: isCorrect ? Colors.green : Colors.red,
-          fontWeight: FontWeight.bold,
-        ),
-        textAlign: TextAlign.center,
-      ),
-    );
-  }
-}
 
 class _PlayButton extends StatefulWidget {
   final VoidCallback onPlay;
   final bool pulsing;
-  const _PlayButton({required this.onPlay, required this.pulsing});
+  final bool showIcon;
+  final Color color;
+  final int? pointValue;
+  const _PlayButton({super.key, required this.onPlay, required this.pulsing, this.showIcon = true, this.color = Colors.white, this.pointValue});
 
   @override
   State<_PlayButton> createState() => _PlayButtonState();
@@ -390,9 +526,20 @@ class _PlayButtonState extends State<_PlayButton>
                 : [],
           ),
           child: CustomPaint(
-            painter: _HexFillPainter(Colors.white),
-            child: const Center(
-              child: Icon(Icons.play_arrow, color: Colors.green, size: 36),
+            painter: _HexFillPainter(widget.color),
+            child: Center(
+              child: widget.showIcon
+                  ? Icon(Icons.play_arrow, color: ToneTokenColors.faColor, size: 36)
+                  : widget.pointValue != null
+                      ? Text(
+                          '${widget.pointValue}',
+                          style: const TextStyle(
+                            fontSize: 28,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black,
+                          ),
+                        )
+                      : const SizedBox.shrink(),
             ),
           ),
         ),
@@ -542,6 +689,7 @@ class _TokenGrid extends StatelessWidget {
         size: size,
         orientation: HexagonOrientation.flatTop,
         glowing: isGlowing,
+        outlineOnly: !levelSpecs.answerTokensMakeASound,
         onTap: () => onTap(nugget),
       ),
     );
@@ -607,41 +755,43 @@ class _HexFillPainter extends CustomPainter {
 
 // ── Splash effect overlay ─────────────────────────────────────────────────────
 
-class _SplashEffect extends StatefulWidget {
-  final Offset center;
+class _PointsFlyEffect extends StatefulWidget {
+  final Offset from;
+  final Offset to;
   final String label;
   final VoidCallback onDone;
 
-  const _SplashEffect({
-    required this.center,
+  const _PointsFlyEffect({
+    required this.from,
+    required this.to,
     required this.label,
     required this.onDone,
   });
 
   @override
-  State<_SplashEffect> createState() => _SplashEffectState();
+  State<_PointsFlyEffect> createState() => _PointsFlyEffectState();
 }
 
-class _SplashEffectState extends State<_SplashEffect>
+class _PointsFlyEffectState extends State<_PointsFlyEffect>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   late final Animation<double> _opacity;
-  late final Animation<double> _rise;
+  late final Animation<Offset> _position;
 
   @override
   void initState() {
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 900),
+      duration: const Duration(milliseconds: 600),
     );
     _opacity = TweenSequence([
-      TweenSequenceItem(tween: Tween(begin: 0.0, end: 1.0), weight: 15),
-      TweenSequenceItem(tween: ConstantTween(1.0), weight: 35),
-      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.0), weight: 50),
+      TweenSequenceItem(tween: Tween(begin: 0.0, end: 1.0), weight: 20),
+      TweenSequenceItem(tween: ConstantTween(1.0), weight: 50),
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.0), weight: 30),
     ]).animate(_controller);
-    _rise = Tween<double>(begin: 0.0, end: 90.0).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeOut),
+    _position = Tween<Offset>(begin: widget.from, end: widget.to).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
     );
     _controller.forward().then((_) => widget.onDone());
   }
@@ -658,8 +808,8 @@ class _SplashEffectState extends State<_SplashEffect>
       animation: _controller,
       builder: (_, __) {
         return Positioned(
-          left: widget.center.dx - 40,
-          top: widget.center.dy - 30 - _rise.value,
+          left: _position.value.dx - 40,
+          top: _position.value.dy - 18,
           width: 80,
           child: IgnorePointer(
             child: Opacity(
@@ -668,7 +818,7 @@ class _SplashEffectState extends State<_SplashEffect>
                 widget.label,
                 textAlign: TextAlign.center,
                 style: const TextStyle(
-                  fontSize: 36,
+                  fontSize: 28,
                   fontWeight: FontWeight.bold,
                   color: Colors.white,
                   shadows: [
@@ -684,37 +834,144 @@ class _SplashEffectState extends State<_SplashEffect>
   }
 }
 
+class _HexFlyEffect extends StatefulWidget {
+  final Offset from;
+  final Offset to;
+  final Color color;
+  final double size;
+  final String? label;
+  final VoidCallback onDone;
+
+  const _HexFlyEffect({
+    required this.from,
+    required this.to,
+    required this.color,
+    required this.size,
+    this.label,
+    required this.onDone,
+  });
+
+  @override
+  State<_HexFlyEffect> createState() => _HexFlyEffectState();
+}
+
+class _HexFlyEffectState extends State<_HexFlyEffect>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _opacity;
+  late final Animation<Offset> _position;
+  late final Animation<double> _scale;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    );
+    _opacity = TweenSequence([
+      TweenSequenceItem(tween: Tween(begin: 0.8, end: 1.0), weight: 30),
+      TweenSequenceItem(tween: ConstantTween(1.0), weight: 40),
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.0), weight: 30),
+    ]).animate(_controller);
+    _position = Tween<Offset>(begin: widget.from, end: widget.to).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
+    _scale = Tween<double>(begin: 1.0, end: 0.6).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeIn),
+    );
+    _controller.forward().then((_) => widget.onDone());
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (_, __) {
+        final s = widget.size * _scale.value;
+        return Positioned(
+          left: _position.value.dx - s / 2,
+          top: _position.value.dy - s / 2,
+          width: s,
+          height: s,
+          child: IgnorePointer(
+            child: Opacity(
+              opacity: _opacity.value,
+              child: CustomPaint(
+                painter: _HexFillPainter(widget.color),
+                child: widget.label != null
+                    ? Center(
+                        child: Text(
+                          widget.label!,
+                          style: const TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                            shadows: [
+                              Shadow(offset: Offset(1, 1), blurRadius: 3, color: Colors.black45),
+                            ],
+                          ),
+                        ),
+                      )
+                    : null,
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 // ── Round end overlay ─────────────────────────────────────────────────────────
 
 class _RoundEndOverlay extends StatelessWidget {
   final PracticeSession session;
   final VoidCallback onRestart;
+  final VoidCallback onNextLevel;
 
-  const _RoundEndOverlay({required this.session, required this.onRestart});
+  const _RoundEndOverlay({
+    required this.session,
+    required this.onRestart,
+    required this.onNextLevel,
+  });
 
   @override
   Widget build(BuildContext context) {
     final mastered = session.roundMastered;
     final cleared = session.roundCleared;
     final specs = session.levelSpecs;
+    final isWarmUp = specs.levelType == LevelType.warmUp;
 
-    final String headline = mastered
-        ? 'MASTERED!'
-        : cleared
-            ? 'LEVEL CLEARED'
-            : 'ROUND OVER';
+    final String headline = isWarmUp
+        ? 'WARM-UP COMPLETE'
+        : mastered
+            ? 'MASTERED!'
+            : cleared
+                ? 'LEVEL CLEARED'
+                : 'ROUND OVER';
 
-    final Color headlineColor = mastered
+    final Color headlineColor = isWarmUp
         ? Colors.amber
-        : cleared
-            ? Colors.greenAccent
-            : Colors.white70;
+        : mastered
+            ? Colors.amber
+            : cleared
+                ? ToneTokenColors.faColor
+                : Colors.white70;
 
-    final String sub = mastered
-        ? 'Perfect — you\'ve mastered this level.'
-        : cleared
-            ? 'You\'re ready for the next level.'
-            : 'Score ${session.totalPoints} — need ${specs.pointsToClear} to clear.';
+    final String sub = isWarmUp
+        ? 'Ready to move on?'
+        : mastered
+            ? 'Perfect — you\'ve mastered this level.'
+            : cleared
+                ? 'You\'re ready for the next level.'
+                : 'Score ${session.totalPoints} — need ${specs.pointsToClear} to clear.';
 
     return Container(
       color: Colors.black.withValues(alpha: 0.85),
@@ -737,26 +994,40 @@ class _RoundEndOverlay extends StatelessWidget {
               style: const TextStyle(fontSize: 18, color: Colors.white70),
               textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 8),
-            Text(
-              '${session.totalPoints} / ${specs.questionsPerRound * (specs.pointTiers.first)} pts',
-              style: const TextStyle(fontSize: 16, color: Colors.white38),
-            ),
-            const SizedBox(height: 40),
-            GestureDetector(
-              onTapDown: (_) => onRestart(),
-              child: Container(
-                width: 160,
-                height: 72,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(72),
-                  border: Border.all(color: Colors.black, width: 2.5),
-                ),
-                child: const Icon(Icons.replay, color: Colors.green, size: 36),
+            if (!isWarmUp) ...[
+              const SizedBox(height: 8),
+              Text(
+                '${session.totalPoints} / ${specs.questionsPerRound * (specs.pointTiers.first)} pts',
+                style: const TextStyle(fontSize: 16, color: Colors.white38),
               ),
+            ],
+            const SizedBox(height: 40),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _hexButton(Icons.replay, Colors.white, onRestart),
+                const SizedBox(width: 24),
+                _hexButton(Icons.arrow_forward, ToneTokenColors.faColor, onNextLevel),
+              ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _hexButton(IconData icon, Color color, VoidCallback onTap) {
+    const size = 80.0;
+    return GestureDetector(
+      onTapDown: (_) => onTap(),
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: CustomPaint(
+          painter: _HexFillPainter(color),
+          child: Center(
+            child: Icon(icon, color: Colors.black87, size: 36),
+          ),
         ),
       ),
     );

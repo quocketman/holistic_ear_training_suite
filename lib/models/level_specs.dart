@@ -77,6 +77,10 @@ class LevelSpecs {
   /// Mirrors LULevelSpecs preferredFirstNote.
   final NoteNugget? preferredFirstNote;
 
+  /// Fixed sequence of scale degrees for seriesForwardOnly levels.
+  /// Each entry is a scaleDegree (e.g. 1, 2, 7). The round ends when exhausted.
+  final List<int>? simpleNuggetSeries;
+
   // ── Round & scoring ─────────────────────────────────────────────────────────
 
   /// Number of questions in a single round.
@@ -108,6 +112,7 @@ class LevelSpecs {
     this.instructiveText2,
     this.levelType = LevelType.practice,
     this.preferredFirstNote,
+    this.simpleNuggetSeries,
     this.questionsPerRound = 20,
     this.pointTiers = const [10, 5, 3, 1],
     this.pointsToClear = 160,   // 80% of 200
@@ -142,6 +147,9 @@ class LevelSpecs {
       widestChromaticRange: (json['widestChromaticRange'] as int?) ?? 0,
       preferredFirstNote: json['preferredFirstNote'] != null
           ? nuggetFromJson(json['preferredFirstNote'] as Map<String, dynamic>)
+          : null,
+      simpleNuggetSeries: json['simpleNuggetSeries'] != null
+          ? (json['simpleNuggetSeries'] as List).cast<int>()
           : null,
       questionsPerRound: (json['questionsPerRound'] as int?) ?? 20,
       pointTiers: json['pointTiers'] != null
