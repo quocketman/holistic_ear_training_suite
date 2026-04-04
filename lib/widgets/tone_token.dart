@@ -14,6 +14,7 @@ class ToneToken extends StatefulWidget {
   final HexagonOrientation orientation;
   final VoidCallback? onTapDown;
   final VoidCallback? onTapUp;
+  final bool glowing;
 
   /// Legacy callback - triggers on tap down for backwards compatibility
   final VoidCallback? onTap;
@@ -26,6 +27,7 @@ class ToneToken extends StatefulWidget {
     this.onTap,
     this.onTapDown,
     this.onTapUp,
+    this.glowing = false,
   });
 
   @override
@@ -55,6 +57,16 @@ class _ToneTokenState extends State<ToneToken>
     super.dispose();
   }
 
+  @override
+  void didUpdateWidget(ToneToken oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.glowing && !oldWidget.glowing) {
+      _controller.forward();
+    } else if (!widget.glowing && oldWidget.glowing) {
+      _controller.reverse();
+    }
+  }
+
   void _handleTapDown() {
     _controller.forward();
     widget.onTapDown?.call();
@@ -62,7 +74,7 @@ class _ToneTokenState extends State<ToneToken>
   }
 
   void _handleTapUp() {
-    _controller.reverse();
+    if (!widget.glowing) _controller.reverse();
     widget.onTapUp?.call();
   }
 
@@ -82,43 +94,64 @@ class _ToneTokenState extends State<ToneToken>
       onTapDown: (_) => _handleTapDown(),
       onTapUp: (_) => _handleTapUp(),
       onTapCancel: _handleTapUp,
-      child: ScaleTransition(
-        scale: _scale,
-        child: SizedBox(
-          width: widget.size,
-          height: widget.size,
-          child: Transform.rotate(
-            angle: rotationAngle,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                SvgPicture.asset(
-                  'assets/hexagons/hex_00.svg',
-                  width: widget.size,
-                  height: widget.size,
-                  fit: BoxFit.contain,
-                  colorFilter: ColorFilter.mode(hexColor, BlendMode.srcIn),
-                ),
-                Transform.rotate(
-                  angle: -rotationAngle,
-                  child: Text(
-                    solfegeLabel,
-                    style: TextStyle(
-                      fontSize: widget.size * 0.3,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                      shadows: const [
-                        Shadow(
-                          offset: Offset(1, 1),
-                          blurRadius: 3,
-                          color: Colors.black45,
-                        ),
-                      ],
-                    ),
-                    textAlign: TextAlign.center,
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, child) {
+          final glowAlpha = _controller.value * 0.9;
+          return Container(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              boxShadow: glowAlpha > 0
+                  ? [BoxShadow(color: Colors.white.withValues(alpha: glowAlpha), blurRadius: 24, spreadRadius: 8)]
+                  : [],
+            ),
+            child: child,
+          );
+        },
+        child: ScaleTransition(
+          scale: _scale,
+          child: SizedBox(
+            width: widget.size,
+            height: widget.size,
+            child: Transform.rotate(
+              angle: rotationAngle,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  SvgPicture.asset(
+                    'assets/hexagons/hex_00.svg',
+                    width: widget.size,
+                    height: widget.size,
+                    fit: BoxFit.contain,
+                    colorFilter: ColorFilter.mode(hexColor, BlendMode.srcIn),
                   ),
-                ),
-              ],
+                  SvgPicture.asset(
+                    'assets/hexagons/hex_outline.svg',
+                    width: widget.size,
+                    height: widget.size,
+                    fit: BoxFit.contain,
+                  ),
+                  Transform.rotate(
+                    angle: -rotationAngle,
+                    child: Text(
+                      solfegeLabel,
+                      style: TextStyle(
+                        fontSize: widget.size * 0.3,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                        shadows: const [
+                          Shadow(
+                            offset: Offset(1, 1),
+                            blurRadius: 3,
+                            color: Colors.black45,
+                          ),
+                        ],
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -126,3 +159,4 @@ class _ToneTokenState extends State<ToneToken>
     );
   }
 }
+

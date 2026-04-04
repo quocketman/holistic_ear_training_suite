@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'package:flutter/services.dart';
 import 'note_nugget.dart';
 import 'enums.dart';
 
@@ -32,6 +34,9 @@ enum QuestionTokenSymbolMode {
 /// Specifies the rules and content for a single practice level.
 /// Mirrors LULevelSpecs.
 class LevelSpecs {
+  /// Unique identifier used for progress tracking and JSON loading.
+  final String id;
+
   final String levelTitle;
 
   /// The NoteNuggets available as both questions and answers in this level.
@@ -72,7 +77,23 @@ class LevelSpecs {
   /// Mirrors LULevelSpecs preferredFirstNote.
   final NoteNugget? preferredFirstNote;
 
+  // ── Round & scoring ─────────────────────────────────────────────────────────
+
+  /// Number of questions in a single round.
+  final int questionsPerRound;
+
+  /// Point value tiers indexed by wrong attempts before solving.
+  /// e.g. [10, 5, 3, 1] → 0 wrong = 10 pts, 1 wrong = 5 pts, 2 wrong = 3 pts, 3+ = 1 pt.
+  final List<int> pointTiers;
+
+  /// Score required to clear the level (progress to next level).
+  final int pointsToClear;
+
+  /// Score required to master the level (earn recognition).
+  final int pointsToMaster;
+
   const LevelSpecs({
+    required this.id,
     required this.levelTitle,
     required this.availableNoteNuggets,
     this.howManyAtATime = 1,
@@ -87,5 +108,56 @@ class LevelSpecs {
     this.instructiveText2,
     this.levelType = LevelType.practice,
     this.preferredFirstNote,
+    this.questionsPerRound = 20,
+    this.pointTiers = const [10, 5, 3, 1],
+    this.pointsToClear = 160,   // 80% of 200
+    this.pointsToMaster = 180,  // 90% of 200
   });
+
+  factory LevelSpecs.fromJson(Map<String, dynamic> json) {
+    NoteNugget nuggetFromJson(Map<String, dynamic> n) => NoteNugget(
+          scaleDegree: n['scaleDegree'] as int,
+          chromaticAlteration: (n['chromaticAlteration'] as int?) ?? 0,
+          octave: (n['octave'] as int?) ?? 0,
+        );
+
+    return LevelSpecs(
+      id: json['id'] as String,
+      levelTitle: json['title'] as String,
+      levelType: LevelType.values.byName(json['levelType'] as String),
+      availableNoteNuggets: (json['availableNoteNuggets'] as List)
+          .map((n) => nuggetFromJson(n as Map<String, dynamic>))
+          .toList(),
+      howManyAtATime: (json['howManyAtATime'] as int?) ?? 1,
+      howManyInARow: (json['howManyInARow'] as int?) ?? 1,
+      noTwiceInARow: (json['noTwiceInARow'] as bool?) ?? false,
+      answerTokensMakeASound: (json['answerTokensMakeASound'] as bool?) ?? true,
+      puzzleGenerationMethod: PuzzleGenerationMethod.values
+          .byName(json['puzzleGenerationMethod'] as String),
+      questionTokenSymbolMode: QuestionTokenSymbolMode.values
+          .byName(json['questionTokenSymbolMode'] as String),
+      preferredMode: json['preferredMode'] != null
+          ? Mode.values.byName(json['preferredMode'] as String)
+          : null,
+      widestChromaticRange: (json['widestChromaticRange'] as int?) ?? 0,
+      preferredFirstNote: json['preferredFirstNote'] != null
+          ? nuggetFromJson(json['preferredFirstNote'] as Map<String, dynamic>)
+          : null,
+      questionsPerRound: (json['questionsPerRound'] as int?) ?? 20,
+      pointTiers: json['pointTiers'] != null
+          ? (json['pointTiers'] as List).cast<int>()
+          : const [10, 5, 3, 1],
+      pointsToClear: (json['pointsToClear'] as int?) ?? 160,
+      pointsToMaster: (json['pointsToMaster'] as int?) ?? 180,
+    );
+  }
+
+  /// Loads all levels from assets/levels/levels.json.
+  static Future<List<LevelSpecs>> loadAll() async {
+    final raw = await rootBundle.loadString('assets/levels/levels.json');
+    final data = jsonDecode(raw) as Map<String, dynamic>;
+    return (data['levels'] as List)
+        .map((e) => LevelSpecs.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
 }

@@ -1,0 +1,451 @@
+{
+  "levels": [
+
+    {
+      "id": "level01",
+      "title": "Warm-Up: First Step",
+      "set": "SET 1 (do-re)",
+      "levelType": "warmUp",
+      "availableNoteNuggets": [
+        {"scaleDegree": 1, "chromaticAlteration": 0, "octave": 0},
+        {"scaleDegree": 2, "chromaticAlteration": 0, "octave": 0}
+      ],
+      "simpleNuggetSeries": [1,1,1,2,1,1,2,1,1,1,2,2,1,2,1,1,1,2,2,2,1],
+      "allowedMotions": [[1,2],[2,1]],
+      "puzzleGenerationMethod": "seriesForwardOnly",
+      "questionTokenSymbolMode": "colorOnly",
+      "answerTokensMakeASound": true,
+      "widestChromaticRange": 4,
+      "preferredMode": "major",
+      "preferredTonalCenter": "C",
+      "preferredFirstNote": {"scaleDegree": 1, "chromaticAlteration": 0, "octave": 0},
+      "questionsPerRound": 20,
+      "pointTiers": [10, 5, 3, 1],
+      "pointsToClear": 160,
+      "pointsToMaster": 180
+    },
+
+    {
+      "id": "level02",
+      "title": "Practice: First Step",
+      "set": "SET 1 (do-re)",
+      "levelType": "practice",
+      "availableNoteNuggets": [
+        {"scaleDegree": 1, "chromaticAlteration": 0, "octave": 0},
+        {"scaleDegree": 2, "chromaticAlteration": 0, "octave": 0}
+      ],
+      "simpleNuggetSeries": [1,2,1,2],
+      "allowedMotions": [[1,2],[2,1]],
+      "puzzleGenerationMethod": "shiftingProbabilities",
+      "questionTokenSymbolMode": "blank",
+      "answerTokensMakeASound": true,
+      "widestChromaticRange": 4,
+      "preferredMode": "major",
+      "preferredTonalCenter": "C",
+      "preferredFirstNote": {"scaleDegree": 1, "chromaticAlteration": 0, "octave": 0},
+      "questionsPerRound": 20,
+      "pointTiers": [10, 5, 3, 1],
+      "pointsToClear": 160,
+      "pointsToMaster": 180
+    },
+
+    {
+      "id": "level03",
+      "title": "Challenge: First Step",
+      "set": "SET 1 (do-re)",
+      "levelType": "challenge",
+      "availableNoteNuggets": [
+        {"scaleDegree": 1, "chromaticAlteration": 0, "octave": 0},
+        {"scaleDegree": 2, "chromaticAlteration": 0, "octave": 0}
+      ],
+      "simpleNuggetSeries": [1,2,1,2],
+      "allowedMotions": [[1,2],[2,1]],
+      "puzzleGenerationMethod": "shiftingProbabilities",
+      "questionTokenSymbolMode": "blank",
+      "answerTokensMakeASound": false,
+      "firstNoteCanBeAny": true,
+      "widestChromaticRange": 4,
+      "preferredMode": "major",
+      "preferredTonalCenter": "C",
+      "questionsPerRound": 20,
+      "pointTiers": [10, 5, 3, 1],
+      "pointsToClear": 160,
+      "pointsToMaster": 180
+    },
+
+    {
+      "id": "level04",
+      "title": "Warm-Up: Ti Totalled",
+      "set": "SET 2 (do-ti)",
+      "levelType": "warmUp",
+      "availableNoteNuggets": [
+        {"scaleDegree": 1, "chromaticAlteration": 0, "octave": 0},
+        {"scaleDegree": 7, "chromaticAlteration": 0, "octave": -1}
+      ],
+      "simpleNuggetSeries": [1,7,1,7,1,1,1,1,7,1,7,1,7,7,7,7,7,1,7,1,7,7,7,7,1,7,1,7,1,1,1,1],
+      "allowedMotions": [[1,7],[7,1]],
+      "puzzleGenerationMethod": "seriesForwardOnly",
+      "questionTokenSymbolMode": "colorOnly",
+      "answerTokensMakeASound": true,
+      "widestChromaticRange": 3,
+      "preferredMode": "major",
+      "preferredTonalCenter": "C",
+      "preferredFirstNote": {"scaleDegree": 1, "chromaticAlteration": 0, "octave": 0},
+      "questionsPerRound": 20,
+      "pointTiers": [10, 5, 3, 1],
+      "pointsToClear": 160,
+      "pointsToMaster": 180
+    },
+
+    {
+      "id": "level05",
+      "title": "Practice: Ti Totalled",
+      "set": "SET 2 (do-ti)",
+      "levelType": "practice",
+      "availableNoteNuggets": [
+        {"scaleDegree": 1, "chromaticAlteration": 0, "octave": 0},
+        {"scaleDegree": 7, "chromaticAlteration": 0, "octave": -1}
+      ],
+      "simpleNuggetSeries": [1,7],
+      "allowedMotions": [[1,7],[7,1]],
+      "puzzleGenerationMethod": "shiftingProbabilities",
+      "questionTokenSymbolMode": "blank",
+      "answerTokensMakeASound": true,
+      "widestChromaticRange": 3,
+      "preferredMode": "major",
+      "preferredTonalCenter": "C",
+      "preferredFirstNote": {"scaleDegree": 1, "chromaticAlteration": 0, "octave": 0},
+      "questionsPerRound": 20,
+      "pointTiers": [10, 5, 3, 1],
+      "pointsToClear": 160,
+      "pointsToMaster": 180
+    },
+
+    {
+      "id": "level06",
+      "title": "Challenge: Ti Totalled",
+      "set": "SET 2 (do-ti)",
+      "levelType": "challenge",
+      "availableNoteNuggets": [
+        {"scaleDegree": 1, "chromaticAlteration": 0, "octave": 0},
+        {"scaleDegree": 7, "chromaticAlteration": 0, "octave": -1}
+      ],
+      "simpleNuggetSeries": [1,7],
+      "allowedMotions": [[1,7],[7,1]],
+      "puzzleGenerationMethod": "shiftingProbabilities",
+      "questionTokenSymbolMode": "blank",
+      "answerTokensMakeASound": false,
+      "firstNoteCanBeAny": true,
+      "widestChromaticRange": 3,
+      "preferredMode": "major",
+      "preferredTonalCenter": "C",
+      "questionsPerRound": 20,
+      "pointTiers": [10, 5, 3, 1],
+      "pointsToClear": 160,
+      "pointsToMaster": 180
+    },
+
+    {
+      "id": "level07",
+      "title": "Warm-Up: Third Time Charm",
+      "set": "ti-do-re",
+      "levelType": "warmUp",
+      "availableNoteNuggets": [
+        {"scaleDegree": 7, "chromaticAlteration": 0, "octave": -1},
+        {"scaleDegree": 1, "chromaticAlteration": 0, "octave": 0},
+        {"scaleDegree": 2, "chromaticAlteration": 0, "octave": 0}
+      ],
+      "simpleNuggetSeries": [1,7,1,2,1,1,2,1,7,1,2,2,1,2,1,7,1,1,7,1,2,1,7,7,7,7,1],
+      "allowedMotions": [[7,1],[1,7],[1,2],[2,1]],
+      "puzzleGenerationMethod": "seriesForwardOnly",
+      "questionTokenSymbolMode": "colorOnly",
+      "answerTokensMakeASound": true,
+      "widestChromaticRange": 5,
+      "preferredMode": "major",
+      "preferredTonalCenter": "Db",
+      "preferredFirstNote": {"scaleDegree": 1, "chromaticAlteration": 0, "octave": 0},
+      "questionsPerRound": 20,
+      "pointTiers": [10, 5, 3, 1],
+      "pointsToClear": 160,
+      "pointsToMaster": 180
+    },
+
+    {
+      "id": "level08",
+      "title": "Practice: Third Time Charm",
+      "set": "ti-do-re",
+      "levelType": "practice",
+      "availableNoteNuggets": [
+        {"scaleDegree": 7, "chromaticAlteration": 0, "octave": -1},
+        {"scaleDegree": 1, "chromaticAlteration": 0, "octave": 0},
+        {"scaleDegree": 2, "chromaticAlteration": 0, "octave": 0}
+      ],
+      "simpleNuggetSeries": [1,7,1,2],
+      "allowedMotions": [[7,1],[1,7],[1,2],[2,1]],
+      "puzzleGenerationMethod": "shiftingProbabilities",
+      "questionTokenSymbolMode": "blank",
+      "answerTokensMakeASound": true,
+      "widestChromaticRange": 5,
+      "preferredMode": "major",
+      "preferredTonalCenter": "Db",
+      "preferredFirstNote": {"scaleDegree": 1, "chromaticAlteration": 0, "octave": 0},
+      "questionsPerRound": 20,
+      "pointTiers": [10, 5, 3, 1],
+      "pointsToClear": 160,
+      "pointsToMaster": 180
+    },
+
+    {
+      "id": "level09",
+      "title": "Challenge: Third Time Charm",
+      "set": "ti-do-re",
+      "levelType": "challenge",
+      "availableNoteNuggets": [
+        {"scaleDegree": 7, "chromaticAlteration": 0, "octave": -1},
+        {"scaleDegree": 1, "chromaticAlteration": 0, "octave": 0},
+        {"scaleDegree": 2, "chromaticAlteration": 0, "octave": 0}
+      ],
+      "simpleNuggetSeries": [1,7,1,2],
+      "allowedMotions": [[7,1],[1,7],[1,2],[2,1]],
+      "puzzleGenerationMethod": "shiftingProbabilities",
+      "questionTokenSymbolMode": "blank",
+      "answerTokensMakeASound": false,
+      "firstNoteCanBeAny": true,
+      "widestChromaticRange": 5,
+      "preferredMode": "major",
+      "preferredTonalCenter": "Db",
+      "questionsPerRound": 20,
+      "pointTiers": [10, 5, 3, 1],
+      "pointsToClear": 160,
+      "pointsToMaster": 180
+    },
+
+    {
+      "id": "level10",
+      "title": "Warm-Up: Easy Little Lamb",
+      "set": "SET 3 (do-re-mi)",
+      "levelType": "warmUp",
+      "availableNoteNuggets": [
+        {"scaleDegree": 1, "chromaticAlteration": 0, "octave": 0},
+        {"scaleDegree": 2, "chromaticAlteration": 0, "octave": 0},
+        {"scaleDegree": 3, "chromaticAlteration": 0, "octave": 0}
+      ],
+      "simpleNuggetSeries": [1,2,3,2,1,2,3,3,3,3,2,2,2,2,3,3,3,3,3,2,1,2,3,2,1,2,3,3,3,3,2,2,3,2,1],
+      "allowedMotions": [[1,2],[2,1],[2,3],[3,2]],
+      "puzzleGenerationMethod": "seriesForwardOnly",
+      "questionTokenSymbolMode": "colorOnly",
+      "answerTokensMakeASound": true,
+      "widestChromaticRange": 6,
+      "preferredMode": "major",
+      "preferredTonalCenter": "D",
+      "preferredFirstNote": {"scaleDegree": 1, "chromaticAlteration": 0, "octave": 0},
+      "questionsPerRound": 20,
+      "pointTiers": [10, 5, 3, 1],
+      "pointsToClear": 160,
+      "pointsToMaster": 180
+    },
+
+    {
+      "id": "level11",
+      "title": "Practice: Easy Little Lamb",
+      "set": "SET 3 (do-re-mi)",
+      "levelType": "practice",
+      "availableNoteNuggets": [
+        {"scaleDegree": 1, "chromaticAlteration": 0, "octave": 0},
+        {"scaleDegree": 2, "chromaticAlteration": 0, "octave": 0},
+        {"scaleDegree": 3, "chromaticAlteration": 0, "octave": 0}
+      ],
+      "simpleNuggetSeries": [1,2,3,2,3,2,1],
+      "allowedMotions": [[1,2],[2,1],[2,3],[3,2]],
+      "puzzleGenerationMethod": "shiftingProbabilities",
+      "questionTokenSymbolMode": "blank",
+      "answerTokensMakeASound": true,
+      "widestChromaticRange": 6,
+      "preferredMode": "major",
+      "preferredTonalCenter": "D",
+      "preferredFirstNote": {"scaleDegree": 1, "chromaticAlteration": 0, "octave": 0},
+      "questionsPerRound": 20,
+      "pointTiers": [10, 5, 3, 1],
+      "pointsToClear": 160,
+      "pointsToMaster": 180
+    },
+
+    {
+      "id": "level12",
+      "title": "Challenge: Easy Little Lamb",
+      "set": "SET 3 (do-re-mi)",
+      "levelType": "challenge",
+      "availableNoteNuggets": [
+        {"scaleDegree": 1, "chromaticAlteration": 0, "octave": 0},
+        {"scaleDegree": 2, "chromaticAlteration": 0, "octave": 0},
+        {"scaleDegree": 3, "chromaticAlteration": 0, "octave": 0}
+      ],
+      "simpleNuggetSeries": [1,2,3,2,3,2,1],
+      "allowedMotions": [[1,2],[2,1],[2,3],[3,2]],
+      "puzzleGenerationMethod": "shiftingProbabilities",
+      "questionTokenSymbolMode": "blank",
+      "answerTokensMakeASound": false,
+      "firstNoteCanBeAny": true,
+      "widestChromaticRange": 6,
+      "preferredMode": "major",
+      "preferredTonalCenter": "D",
+      "questionsPerRound": 20,
+      "pointTiers": [10, 5, 3, 1],
+      "pointsToClear": 160,
+      "pointsToMaster": 180
+    },
+
+    {
+      "id": "level13",
+      "title": "Warm-Up: You Are Not Sleeping",
+      "set": "SET 4 (do-re-mi w/ do-mi skips)",
+      "levelType": "warmUp",
+      "availableNoteNuggets": [
+        {"scaleDegree": 1, "chromaticAlteration": 0, "octave": 0},
+        {"scaleDegree": 2, "chromaticAlteration": 0, "octave": 0},
+        {"scaleDegree": 3, "chromaticAlteration": 0, "octave": 0}
+      ],
+      "simpleNuggetSeries": [1,2,3,1,1,2,3,1,3,2,1,1,3,2,1,1,2,3,1,1,2,3,1,1],
+      "allowedMotions": [[1,2],[2,1],[2,3],[3,2],[1,3],[3,1]],
+      "puzzleGenerationMethod": "seriesForwardOnly",
+      "questionTokenSymbolMode": "colorOnly",
+      "answerTokensMakeASound": true,
+      "widestChromaticRange": 6,
+      "preferredMode": "major",
+      "preferredTonalCenter": "Eb",
+      "preferredFirstNote": {"scaleDegree": 1, "chromaticAlteration": 0, "octave": 0},
+      "questionsPerRound": 20,
+      "pointTiers": [10, 5, 3, 1],
+      "pointsToClear": 160,
+      "pointsToMaster": 180
+    },
+
+    {
+      "id": "level14",
+      "title": "Practice: You Are Not Sleeping",
+      "set": "SET 4 (do-re-mi w/ do-mi skips)",
+      "levelType": "practice",
+      "availableNoteNuggets": [
+        {"scaleDegree": 1, "chromaticAlteration": 0, "octave": 0},
+        {"scaleDegree": 2, "chromaticAlteration": 0, "octave": 0},
+        {"scaleDegree": 3, "chromaticAlteration": 0, "octave": 0}
+      ],
+      "simpleNuggetSeries": [1,2,3,1,3,2,1,3,1,2,1],
+      "allowedMotions": [[1,2],[2,1],[2,3],[3,2],[1,3],[3,1]],
+      "puzzleGenerationMethod": "shiftingProbabilities",
+      "questionTokenSymbolMode": "blank",
+      "answerTokensMakeASound": true,
+      "widestChromaticRange": 6,
+      "preferredMode": "major",
+      "preferredTonalCenter": "Eb",
+      "preferredFirstNote": {"scaleDegree": 1, "chromaticAlteration": 0, "octave": 0},
+      "questionsPerRound": 20,
+      "pointTiers": [10, 5, 3, 1],
+      "pointsToClear": 160,
+      "pointsToMaster": 180
+    },
+
+    {
+      "id": "level15",
+      "title": "Challenge: You Are Not Sleeping",
+      "set": "SET 4 (do-re-mi w/ do-mi skips)",
+      "levelType": "challenge",
+      "availableNoteNuggets": [
+        {"scaleDegree": 1, "chromaticAlteration": 0, "octave": 0},
+        {"scaleDegree": 2, "chromaticAlteration": 0, "octave": 0},
+        {"scaleDegree": 3, "chromaticAlteration": 0, "octave": 0}
+      ],
+      "simpleNuggetSeries": [1,2,3,1,3,2,1,3,1,2,1],
+      "allowedMotions": [[1,2],[2,1],[2,3],[3,2],[1,3],[3,1]],
+      "puzzleGenerationMethod": "shiftingProbabilities",
+      "questionTokenSymbolMode": "blank",
+      "answerTokensMakeASound": false,
+      "firstNoteCanBeAny": true,
+      "widestChromaticRange": 6,
+      "preferredMode": "major",
+      "preferredTonalCenter": "Eb",
+      "questionsPerRound": 20,
+      "pointTiers": [10, 5, 3, 1],
+      "pointsToClear": 160,
+      "pointsToMaster": 180
+    },
+
+    {
+      "id": "level16",
+      "title": "Warm-Up: Be Forgot",
+      "set": "SET 5 (ti-do-re-mi, do-mi skips)",
+      "levelType": "warmUp",
+      "availableNoteNuggets": [
+        {"scaleDegree": 7, "chromaticAlteration": 0, "octave": -1},
+        {"scaleDegree": 1, "chromaticAlteration": 0, "octave": 0},
+        {"scaleDegree": 2, "chromaticAlteration": 0, "octave": 0},
+        {"scaleDegree": 3, "chromaticAlteration": 0, "octave": 0}
+      ],
+      "simpleNuggetSeries": [1,7,1,3,2,1,2,3,1,1,3,1,7,7,7,7,1,7,1,3,2,1,2,3,1,7,1,3,1,1,1],
+      "allowedMotions": [[1,2],[2,1],[7,1],[1,7],[2,3],[3,2],[1,3],[3,1]],
+      "puzzleGenerationMethod": "seriesForwardOnly",
+      "questionTokenSymbolMode": "colorOnly",
+      "answerTokensMakeASound": true,
+      "widestChromaticRange": 7,
+      "preferredMode": "major",
+      "preferredTonalCenter": "E",
+      "preferredFirstNote": {"scaleDegree": 1, "chromaticAlteration": 0, "octave": 0},
+      "questionsPerRound": 20,
+      "pointTiers": [10, 5, 3, 1],
+      "pointsToClear": 160,
+      "pointsToMaster": 180
+    },
+
+    {
+      "id": "level17",
+      "title": "Practice: Be Forgot",
+      "set": "SET 5 (ti-do-re-mi, do-mi skips)",
+      "levelType": "practice",
+      "availableNoteNuggets": [
+        {"scaleDegree": 7, "chromaticAlteration": 0, "octave": -1},
+        {"scaleDegree": 1, "chromaticAlteration": 0, "octave": 0},
+        {"scaleDegree": 2, "chromaticAlteration": 0, "octave": 0},
+        {"scaleDegree": 3, "chromaticAlteration": 0, "octave": 0}
+      ],
+      "simpleNuggetSeries": [1,7,1,3,2,1,3,1,3,2,1,7,1],
+      "allowedMotions": [[1,2],[2,1],[7,1],[1,7],[2,3],[3,2],[1,3],[3,1]],
+      "puzzleGenerationMethod": "shiftingProbabilities",
+      "questionTokenSymbolMode": "blank",
+      "answerTokensMakeASound": true,
+      "widestChromaticRange": 7,
+      "preferredMode": "major",
+      "preferredTonalCenter": "E",
+      "preferredFirstNote": {"scaleDegree": 1, "chromaticAlteration": 0, "octave": 0},
+      "questionsPerRound": 20,
+      "pointTiers": [10, 5, 3, 1],
+      "pointsToClear": 160,
+      "pointsToMaster": 180
+    },
+
+    {
+      "id": "level18",
+      "title": "Challenge: Be Forgot",
+      "set": "SET 5 (ti-do-re-mi, do-mi skips)",
+      "levelType": "challenge",
+      "availableNoteNuggets": [
+        {"scaleDegree": 7, "chromaticAlteration": 0, "octave": -1},
+        {"scaleDegree": 1, "chromaticAlteration": 0, "octave": 0},
+        {"scaleDegree": 2, "chromaticAlteration": 0, "octave": 0},
+        {"scaleDegree": 3, "chromaticAlteration": 0, "octave": 0}
+      ],
+      "simpleNuggetSeries": [1,7,1,3,2,1,3,1,3,2,1,7,1],
+      "allowedMotions": [[1,2],[2,1],[7,1],[1,7],[2,3],[3,2],[1,3],[3,1]],
+      "puzzleGenerationMethod": "shiftingProbabilities",
+      "questionTokenSymbolMode": "blank",
+      "answerTokensMakeASound": false,
+      "firstNoteCanBeAny": true,
+      "widestChromaticRange": 7,
+      "preferredMode": "major",
+      "preferredTonalCenter": "E",
+      "questionsPerRound": 20,
+      "pointTiers": [10, 5, 3, 1],
+      "pointsToClear": 160,
+      "pointsToMaster": 180
+    }
+  ]
+}

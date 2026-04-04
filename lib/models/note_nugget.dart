@@ -82,6 +82,13 @@ class NoteNugget {
     return 'assets/hexagons/hex_$paddedOffset.svg';
   }
 
+  /// True when two nuggets share scale degree and alteration, ignoring octave.
+  /// Used for mapping grid tokens to level notes — the grid represents pitch
+  /// classes, while octave only affects audio playback.
+  bool samePitchClass(NoteNugget other) =>
+      scaleDegree == other.scaleDegree &&
+      chromaticAlteration == other.chromaticAlteration;
+
   @override
   String toString() {
     return 'NoteNugget(degree: $scaleDegree, alt: $chromaticAlteration, oct: $octave)';

@@ -19,18 +19,18 @@ class ToneTokenColors {
   /// Offset 2 = re (D)
   /// etc.
   static const Map<int, Color> _colorMap = {
-    0: Color(0xFFFF2100),  // do - Red
-    1: Color(0xFFFF8000),  // di/ra - Orange
-    2: Color(0xFFFFB000),  // re - Light Orange
-    3: Color(0xFFFCE600),  // ri/me - Yellow
-    4: Color(0xFF00F4E2),  // mi - Cyan
-    5: Color(0xFF0094EF),  // fa - Light Blue
-    6: Color(0xFF0025FF),  // fi/se - Blue
-    7: Color(0xFF006ADD),  // so - Medium Blue
-    8: Color(0xFF7A1DFF),  // si/le - Purple
-    9: Color(0xFFF800FF),  // la - Magenta
-    10: Color(0xFFFF00DC), // li/te - Pink-Magenta
-    11: Color(0xFFFF0080), // ti - Hot Pink
+    0: Color(0xFFFF2100), // do - Red
+    1: Color(0xFFED5500), // ra - Burnt Orange
+    2: Color(0xFFFF8000), // re - Orange
+    3: Color(0xFFFFB000), // me - Amber
+    4: Color(0xFFFCE600), // mi - Yellow
+    5: Color(0xFF00BA00), // fa - Green
+    6: Color(0xFF2498B3), // fi - Teal
+    7: Color(0xFF3F55C7), // so - Blue
+    8: Color(0xFF5600DD), // le - Purple
+    9: Color(0xFF0053F9), // la - Royal Blue
+    10: Color(0xFF7A1DFF), // te - Violet
+    11: Color(0xFFE002C2), // ti - Magenta
   };
 
   /// Get all colors as a list (useful for legends, etc.)
@@ -44,16 +44,16 @@ class ToneTokenColors {
 
   static const Map<int, String> _colorNames = {
     0: 'Red',
-    1: 'Orange',
-    2: 'Light Orange',
-    3: 'Yellow',
-    4: 'Cyan',
-    5: 'Light Blue',
-    6: 'Blue',
-    7: 'Medium Blue',
+    1: 'Burnt Orange',
+    2: 'Orange',
+    3: 'Amber',
+    4: 'Yellow',
+    5: 'Green',
+    6: 'Teal',
+    7: 'Blue',
     8: 'Purple',
-    9: 'Magenta',
-    10: 'Pink-Magenta',
-    11: 'Hot Pink',
+    9: 'Royal Blue',
+    10: 'Violet',
+    11: 'Magenta',
   };
 }
