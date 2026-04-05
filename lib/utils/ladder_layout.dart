@@ -57,11 +57,9 @@ List<LadderSlot> buildLadderSlots({
   final lowestPos = positions.reduce((a, b) => a < b ? a : b);
   final highestPos = positions.reduce((a, b) => a > b ? a : b);
 
-  // Determine the chromatic ceiling: either widestChromaticRange from lowest,
-  // or the highest available note, whichever is larger.
-  final ceiling = widestChromaticRange > 0
-      ? lowestPos + widestChromaticRange - 1
-      : highestPos;
+  // For the ladder layout, stop at the highest available note.
+  // (widestChromaticRange is used by the chromatic layout, not here.)
+  final ceiling = highestPos;
 
   // Find which degree/octave corresponds to the lowest available note.
   final lowestNote = availableNotes.firstWhere(
@@ -91,8 +89,8 @@ List<LadderSlot> buildLadderSlots({
 
     // Only include if at or above the lowest position.
     if (absPos >= lowestPos) {
-      // Fixed alternation by scale degree.
-      final side = (currentDegree.isOdd) ? -1 : 1;
+      // Alternate left/right based on position in the slot list.
+      final side = (slots.length.isEven) ? -1 : 1;
 
       slots.add(LadderSlot(
         nugget: nugget,
@@ -110,8 +108,10 @@ List<LadderSlot> buildLadderSlots({
     }
   }
 
-  // Override: bottom-most and top-most slots are centered.
-  if (slots.isNotEmpty) {
+  // Override: center the bottom-most and top-most only when there
+  // are 3+ slots. With 2 slots, centering both would overlap the
+  // question token in the middle.
+  if (slots.length >= 3) {
     slots.first.side = 0;
     slots.last.side = 0;
   }

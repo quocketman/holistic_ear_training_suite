@@ -244,18 +244,18 @@ class _LevelCardScreenState extends State<LevelCardScreen> {
 
   void _onTokenTapped(NoteNugget gridNugget) {
     if (_sequencePlaying || _listeningToSequence) return;
-    if (_session == null) return;
-    if (_session!.lastResult != null && _session!.sequenceComplete) return;
 
     final levelNugget = _resolveToLevelNugget(gridNugget);
     if (levelNugget == null) return;
 
-    if (!_roundActive) {
-      // Explore mode — just play the sound.
+    // Before or between rounds — just play the sound.
+    if (!_roundActive || _session == null) {
       final musicalState = context.read<MusicalState>();
       _audioService.playTone(musicalState.getMidiNote(levelNugget));
       return;
     }
+
+    if (_session!.lastResult != null && _session!.sequenceComplete) return;
 
     final pointsBefore = _session!.currentQuestionPoints;
     final result = _session!.submitAnswer(levelNugget);
@@ -366,27 +366,20 @@ class _LevelCardScreenState extends State<LevelCardScreen> {
               : '$label  ×$_inARow',
         ),
       ),
-      body: GestureDetector(
-        onHorizontalDragEnd: _roundActive ? null : _onSwipe,
-        child: Column(
-          children: [
-            _buildScoreBar(),
-            Expanded(child: _buildGameBoard()),
-            // Bottom area — fixed height so hex doesn't shift.
-            SizedBox(
-              height: 100,
-              child: !_roundActive
-                  ? _buildPhaseButtons()
-                  : _showRoundEnd
-                      ? _buildRoundEndBar()
-                      : const SizedBox.shrink(),
+      body: Stack(
+        children: [
+          GestureDetector(
+            onHorizontalDragEnd: _roundActive ? null : _onSwipe,
+            child: Column(
+              children: [
+                _buildScoreBar(),
+                Expanded(child: _buildGameBoard()),
+              ],
             ),
-            Padding(
-              padding: const EdgeInsets.only(bottom: 24, top: 8),
-              child: _buildTierDots(),
-            ),
-          ],
-        ),
+          ),
+          if (_showRoundEnd)
+            _buildRoundEndOverlay(),
+        ],
       ),
     );
   }
@@ -498,67 +491,79 @@ class _LevelCardScreenState extends State<LevelCardScreen> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final maxWidth = constraints.maxWidth * 0.88;
-        final maxHeight = constraints.maxHeight * 0.95;
+        // Reserve space for sequence tokens, phase bar, tier dots outside the hex.
+        const sequenceHeight = 36.0; // sequence tokens + gap
+        const belowHexHeight = 110.0; // phase bar + tier dots
+        final maxHexHeight = constraints.maxHeight - sequenceHeight - belowHexHeight;
         // Flat-top hex: height = width * sqrt(3)/2
-        final hexWidth = min(maxWidth, maxHeight / 0.866);
+        final hexWidth = min(maxWidth, maxHexHeight / 0.866);
         final hexHeight = hexWidth * 0.866;
 
-        // Calculate token size from hex interior and semitone count.
+        // Token size: fill the hex. Each chromatic step = one token height.
         final totalSemitones = _ladderSlots.isNotEmpty
-            ? _ladderSlots.last.semitoneFromBottom
+            ? max(1, _ladderSlots.last.semitoneFromBottom)
             : 1;
-        final usableHeight = hexHeight * 0.70; // interior area
-        final tokenSize = min(
-          usableHeight / (1 + totalSemitones),
-          hexWidth * 0.28,
-        );
+        // Tokens fill the full hex height. Cap only for tiny ranges (1-2 semitones).
+        final naturalSize = hexHeight / (1 + totalSemitones);
+        final tokenSize = totalSemitones <= 2
+            ? min(naturalSize, hexWidth * 0.20)
+            : naturalSize;
 
-        final gridSize = Size(hexWidth * 0.70, usableHeight);
+        final gridHeight = tokenSize + totalSemitones * tokenSize;
+        final gridWidth2 = hexWidth * 0.70;
+        final gridSize = Size(gridWidth2, gridHeight);
         final positions = positionsForSlots(
           slots: _ladderSlots,
           size: gridSize,
           tokenSize: tokenSize,
         );
 
-        final gridOffsetX = (hexWidth - gridSize.width) / 2;
-        final gridOffsetY = hexHeight * 0.12;
+        final gridOffsetX = (hexWidth - gridWidth2) / 2;
+        final gridOffsetY = (hexHeight - gridHeight) / 2;
 
         return Center(
-          child: SizedBox(
-            width: hexWidth,
-            height: hexHeight,
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                // Hex container.
-                CustomPaint(
-                  painter: _HexContainerPainter(),
-                  child: const SizedBox.expand(),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Sequence tokens above hex.
+              _buildSequenceTokens(),
+              const SizedBox(height: 8),
+              // Bounding hex with tokens.
+              SizedBox(
+                width: hexWidth,
+                height: hexHeight,
+                child: Stack(
+                  children: [
+                    CustomPaint(
+                      painter: _HexContainerPainter(),
+                      child: const SizedBox.expand(),
+                    ),
+                    for (int i = 0; i < _ladderSlots.length; i++)
+                      Positioned(
+                        left: gridOffsetX + positions[i].dx - tokenSize / 2,
+                        top: gridOffsetY + positions[i].dy - tokenSize / 2,
+                        width: tokenSize,
+                        height: tokenSize,
+                        child: _buildToken(_ladderSlots[i], tokenSize, mode),
+                      ),
+                    Positioned.fill(
+                      child: Center(
+                        child: _buildQuestionToken(tokenSize),
+                      ),
+                    ),
+                  ],
                 ),
-                // Sequence tokens on top of hex.
-                Positioned(
-                  top: -20,
-                  left: 0,
-                  right: 0,
-                  child: _buildSequenceTokens(),
-                ),
-                // Ladder tokens.
-                for (int i = 0; i < _ladderSlots.length; i++)
-                  Positioned(
-                    left: gridOffsetX + positions[i].dx - tokenSize / 2,
-                    top: gridOffsetY + positions[i].dy - tokenSize / 2,
-                    width: tokenSize,
-                    height: tokenSize,
-                    child: _buildToken(_ladderSlots[i], tokenSize, mode),
-                  ),
-                // Question token (play button) in center.
-                Positioned.fill(
-                  child: Center(
-                    child: _buildQuestionToken(tokenSize),
-                  ),
-                ),
-              ],
-            ),
+              ),
+              const SizedBox(height: 8),
+              // Phase bar below hex.
+              SizedBox(
+                height: 76,
+                child: !_roundActive
+                    ? _buildPhaseButtons()
+                    : const SizedBox.shrink(),
+              ),
+              _buildTierDots(),
+            ],
           ),
         );
       },
@@ -633,30 +638,44 @@ class _LevelCardScreenState extends State<LevelCardScreen> {
   }
 
   Widget _buildQuestionToken(double tokenSize) {
-    final qSize = tokenSize * 0.9;
-    return GestureDetector(
-      key: _playButtonKey,
-      onTapDown: (_) {
-        if (_roundActive) {
-          _replayQuestion();
-        }
-      },
-      child: SizedBox(
-        width: qSize,
-        height: qSize,
-        child: CustomPaint(
-          painter: _HexFillPainter(_questionTokenColor),
-          child: _roundActive && !_hideQuestionPoints && _session != null &&
-              _session!.levelSpecs.levelType != LevelType.warmUp
-              ? Center(
-                  child: Text(
-                    '${_session!.currentQuestionPoints}',
-                    style: const TextStyle(
-                      fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black,
-                    ),
-                  ),
-                )
-              : null,
+    const qSize = 56.0; // same size as phase buttons
+    return AnimatedScale(
+      scale: _pulsing ? 1.15 : 1.0,
+      duration: const Duration(milliseconds: 120),
+      curve: Curves.easeOut,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          boxShadow: _pulsing
+              ? [BoxShadow(color: Colors.white.withValues(alpha: 0.9), blurRadius: 24, spreadRadius: 8)]
+              : [],
+        ),
+        child: GestureDetector(
+          key: _playButtonKey,
+          onTapDown: (_) {
+            if (_roundActive) {
+              _replayQuestion();
+            }
+          },
+          child: SizedBox(
+            width: qSize,
+            height: qSize,
+            child: CustomPaint(
+              painter: _HexFillPainter(_questionTokenColor),
+              child: _roundActive && !_hideQuestionPoints && _session != null &&
+                  _session!.levelSpecs.levelType != LevelType.warmUp
+                  ? Center(
+                      child: Text(
+                        '${_session!.currentQuestionPoints}',
+                        style: const TextStyle(
+                          fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black,
+                        ),
+                      ),
+                    )
+                  : null,
+            ),
+          ),
         ),
       ),
     );
@@ -667,7 +686,7 @@ class _LevelCardScreenState extends State<LevelCardScreen> {
     if (!cell.hasLevels || !cell.isUnlocked) return const SizedBox(height: 80);
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.only(top: 0),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
@@ -742,7 +761,7 @@ class _LevelCardScreenState extends State<LevelCardScreen> {
     );
   }
 
-  Widget _buildRoundEndBar() {
+  Widget _buildRoundEndOverlay() {
     if (_session == null) return const SizedBox.shrink();
     final mastered = _session!.roundMastered;
     final cleared = _session!.roundCleared;
@@ -750,36 +769,40 @@ class _LevelCardScreenState extends State<LevelCardScreen> {
     final headline = mastered ? 'MASTERED!' : cleared ? 'CLEARED' : 'ROUND OVER';
     final color = mastered ? Colors.amber : cleared ? ToneTokenColors.faColor : Colors.white70;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-      child: Column(
-        children: [
-          Text(headline, style: TextStyle(
-            fontSize: 28, fontWeight: FontWeight.bold, color: color, letterSpacing: 2,
-          )),
-          const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _phaseButton(
-                fillColor: Colors.white,
-                outlineColor: Colors.white54,
-                iconColor: Colors.black87,
-                label: 'Replay',
-                locked: false,
-                onTap: () => _startRound(_session!.levelSpecs),
-              ),
-              const SizedBox(width: 24),
-              _phaseButton(
-                fillColor: ToneTokenColors.faColor,
-                outlineColor: Colors.white,
-                label: 'Done',
-                locked: false,
-                onTap: _endRound,
-              ),
-            ],
-          ),
-        ],
+    // TODO: stub celebration animation here
+    return Container(
+      color: Colors.black.withValues(alpha: 0.85),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(headline, style: TextStyle(
+              fontSize: 40, fontWeight: FontWeight.bold, color: color, letterSpacing: 2,
+            )),
+            const SizedBox(height: 24),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _phaseButton(
+                  fillColor: Colors.white,
+                  outlineColor: Colors.white54,
+                  iconColor: Colors.black87,
+                  label: 'Replay',
+                  locked: false,
+                  onTap: () => _startRound(_session!.levelSpecs),
+                ),
+                const SizedBox(width: 24),
+                _phaseButton(
+                  fillColor: ToneTokenColors.faColor,
+                  outlineColor: Colors.white,
+                  label: 'Done',
+                  locked: false,
+                  onTap: _endRound,
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
