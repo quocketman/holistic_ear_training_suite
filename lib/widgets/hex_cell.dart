@@ -26,7 +26,7 @@ class HexCell extends StatelessWidget {
       onTap: cell.isUnlocked ? onTap : null,
       child: SizedBox(
         width: size,
-        height: size * 1.15, // pointy-top hex is taller than wide
+        height: size * 0.866, // flat-top hex: height = width * sqrt(3)/2
         child: CustomPaint(
           painter: _HexCellPainter(
             cell: cell,
@@ -76,7 +76,7 @@ class _HexCellPainter extends CustomPainter {
     final center = Offset(canvasSize.width / 2, canvasSize.height / 2);
     final radius = size / 2 * 0.95;
 
-    final vertices = _pointyTopVertices(center, radius);
+    final vertices = _flatTopVertices(center, radius);
     final path = _pathFromVertices(vertices);
 
     // Background fill.
@@ -99,12 +99,12 @@ class _HexCellPainter extends CustomPainter {
     if (!cell.hasLevels) return;
 
     // Progress ring segments.
-    // Pointy-top vertices (clockwise from top): 0=top, 1=top-right,
-    // 2=bottom-right, 3=bottom, 4=bottom-left, 5=top-left.
+    // Flat-top vertices (clockwise from right): 0=right, 1=bottom-right,
+    // 2=bottom-left, 3=left, 4=top-left, 5=top-right.
     //
-    // Warm-up (amber):   edges 4→5, 5→0 (left side)
-    // Practice (blue):   edges 0→1, 1→2 (right-top side)
-    // Challenge (red):   edges 2→3, 3→4 (bottom side)
+    // Warm-up (amber):   edges 4→5, 5→0 (top side)
+    // Practice (blue):   edges 0→1, 1→2 (bottom-right side)
+    // Challenge (red):   edges 2→3, 3→4 (left-bottom side)
 
     _drawSegment(canvas, vertices, [4, 5, 0], Colors.amber,
         cleared: cell.warmUpCleared, mastered: cell.warmUpMastered);
@@ -141,10 +141,10 @@ class _HexCellPainter extends CustomPainter {
     );
   }
 
-  /// Returns 6 vertices of a pointy-top hexagon, clockwise from top.
-  List<Offset> _pointyTopVertices(Offset center, double radius) {
+  /// Returns 6 vertices of a flat-top hexagon, clockwise from right.
+  List<Offset> _flatTopVertices(Offset center, double radius) {
     return List.generate(6, (i) {
-      final angle = (pi / 180) * (60 * i - 90); // -90 puts vertex 0 at top
+      final angle = (60.0 * i) * pi / 180.0; // 0° puts vertex 0 at right
       return Offset(
         center.dx + radius * cos(angle),
         center.dy + radius * sin(angle),

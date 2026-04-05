@@ -9,6 +9,7 @@ import '../models/musical_state.dart';
 import '../models/practice_session.dart';
 import '../models/tone_token_colors.dart';
 import '../services/audio_service.dart';
+import '../services/audio/audio_synthesizer.dart';
 import '../utils/hex_grid_builder.dart';
 import '../utils/ladder_layout.dart';
 import '../widgets/tone_token.dart';
@@ -54,6 +55,7 @@ class _LevelCardScreenState extends State<LevelCardScreen> {
 
   Map<NoteNugget, GlobalKey> _tokenKeys = {};
   List<LadderSlot> _ladderSlots = [];
+  NoteHandle? _activeNoteHandle;
 
   HexGridCell get _currentCell => widget.row[_currentTier];
 
@@ -248,10 +250,10 @@ class _LevelCardScreenState extends State<LevelCardScreen> {
     final levelNugget = _resolveToLevelNugget(gridNugget);
     if (levelNugget == null) return;
 
-    // Before or between rounds — just play the sound.
+    // Before or between rounds — sustain the sound until release.
     if (!_roundActive || _session == null) {
       final musicalState = context.read<MusicalState>();
-      _audioService.playTone(musicalState.getMidiNote(levelNugget));
+      _startSustainedNote(musicalState.getMidiNote(levelNugget));
       return;
     }
 
@@ -264,7 +266,7 @@ class _LevelCardScreenState extends State<LevelCardScreen> {
       final level = _session!.levelSpecs;
       if (level.answerTokensMakeASound) {
         final musicalState = context.read<MusicalState>();
-        _audioService.playTone(musicalState.getMidiNote(levelNugget));
+        _startSustainedNote(musicalState.getMidiNote(levelNugget));
       }
       setState(() {
         _glowingNugget = levelNugget;
@@ -278,6 +280,26 @@ class _LevelCardScreenState extends State<LevelCardScreen> {
     } else {
       _playWrongSequence(levelNugget);
     }
+  }
+
+  void _onTokenReleased() {
+    _activeNoteHandle?.release();
+    _activeNoteHandle = null;
+  }
+
+  /// Start a sustained note with auto-release safety net.
+  void _startSustainedNote(int midiNote) {
+    _activeNoteHandle?.release();
+    _audioService.noteOn(midiNote).then((h) {
+      _activeNoteHandle = h;
+      // Safety: auto-release after 3 seconds if onTapUp never fires.
+      Future.delayed(const Duration(seconds: 3), () {
+        if (_activeNoteHandle == h) {
+          h?.release();
+          _activeNoteHandle = null;
+        }
+      });
+    });
   }
 
   // ── Fly animations ──
@@ -340,12 +362,23 @@ class _LevelCardScreenState extends State<LevelCardScreen> {
   }
 
   Color get _questionTokenColor {
-    if (!_roundActive || _session == null) return Colors.white;
+    if (!_roundActive || _session == null) return Colors.black;
     if (_session!.levelSpecs.levelType != LevelType.warmUp) return Colors.white;
     final question = _session!.currentQuestion;
     if (question == null) return Colors.white;
     final mode = context.read<MusicalState>().currentMode;
     return ToneTokenColors.getColor(question.getChromaticOffset(mode));
+  }
+
+  bool get _questionTokenShowOutline => !_roundActive || _session == null;
+
+  String get _levelDisplayName {
+    final rep = _currentCell.representativeLevel;
+    if (rep == null) return '';
+    // Extract name after "Warm-Up: ", "Practice: ", "Challenge: "
+    final title = rep.levelTitle;
+    final colonIdx = title.indexOf(': ');
+    return colonIdx >= 0 ? title.substring(colonIdx + 2) : title;
   }
 
   // ── Build ──
@@ -360,16 +393,30 @@ class _LevelCardScreenState extends State<LevelCardScreen> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: Text(
-          _roundActive && _session != null
-              ? _session!.levelSpecs.levelTitle
-              : '$label  ×$_inARow',
-        ),
+        title: Text(_levelDisplayName),
       ),
       body: Stack(
         children: [
-          GestureDetector(
-            onHorizontalDragEnd: _roundActive ? null : _onSwipe,
+          _SwipeDetector(
+            enabled: !_roundActive,
+            onSwipeLeft: () {
+              if (_currentTier < hexGridColumns - 1) {
+                setState(() {
+                  _currentTier++;
+                  _inARow = _currentTier + 1;
+                  _buildTokenKeys();
+                });
+              }
+            },
+            onSwipeRight: () {
+              if (_currentTier > 0) {
+                setState(() {
+                  _currentTier--;
+                  _inARow = _currentTier + 1;
+                  _buildTokenKeys();
+                });
+              }
+            },
             child: Column(
               children: [
                 _buildScoreBar(),
@@ -384,23 +431,7 @@ class _LevelCardScreenState extends State<LevelCardScreen> {
     );
   }
 
-  void _onSwipe(DragEndDetails details) {
-    if (_roundActive) return;
-    final dx = details.velocity.pixelsPerSecond.dx;
-    if (dx < -200 && _currentTier < hexGridColumns - 1) {
-      setState(() {
-        _currentTier++;
-        _inARow = _currentTier + 1;
-        _buildTokenKeys();
-      });
-    } else if (dx > 200 && _currentTier > 0) {
-      setState(() {
-        _currentTier--;
-        _inARow = _currentTier + 1;
-        _buildTokenKeys();
-      });
-    }
-  }
+  // Swipe is handled by _SwipeDetector in the build method.
 
   Widget _buildTierDots() {
     return Row(
@@ -525,8 +556,11 @@ class _LevelCardScreenState extends State<LevelCardScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Sequence tokens above hex.
-              _buildSequenceTokens(),
+              // Sequence tokens with +/- buttons, aligned to hex width.
+              SizedBox(
+                width: hexWidth,
+                child: _buildSequenceRow(),
+              ),
               const SizedBox(height: 8),
               // Bounding hex with tokens.
               SizedBox(
@@ -537,6 +571,20 @@ class _LevelCardScreenState extends State<LevelCardScreen> {
                     CustomPaint(
                       painter: _HexContainerPainter(),
                       child: const SizedBox.expand(),
+                    ),
+                    // Connection lines between tokens.
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: CustomPaint(
+                          painter: _ConnectionLinesPainter(
+                            slots: _ladderSlots,
+                            positions: positions,
+                            gridOffsetX: gridOffsetX,
+                            gridOffsetY: gridOffsetY,
+                            allowedMotions: rep.allowedMotions,
+                          ),
+                        ),
+                      ),
                     ),
                     for (int i = 0; i < _ladderSlots.length; i++)
                       Positioned(
@@ -562,11 +610,53 @@ class _LevelCardScreenState extends State<LevelCardScreen> {
                     ? _buildPhaseButtons()
                     : const SizedBox.shrink(),
               ),
-              _buildTierDots(),
             ],
           ),
         );
       },
+    );
+  }
+
+  Widget _buildSequenceRow() {
+    return Row(
+      children: [
+        // Minus button — left edge.
+        GestureDetector(
+          onTap: !_roundActive && _currentTier > 0
+              ? () => setState(() {
+                    _currentTier--;
+                    _inARow = _currentTier + 1;
+                    _buildTokenKeys();
+                  })
+              : null,
+          child: Icon(
+            Icons.remove,
+            color: !_roundActive && _currentTier > 0
+                ? Colors.white54
+                : Colors.white12,
+            size: 24,
+          ),
+        ),
+        // Sequence tokens — centered.
+        Expanded(child: _buildSequenceTokens()),
+        // Plus button — right edge.
+        GestureDetector(
+          onTap: !_roundActive && _currentTier < hexGridColumns - 1
+              ? () => setState(() {
+                    _currentTier++;
+                    _inARow = _currentTier + 1;
+                    _buildTokenKeys();
+                  })
+              : null,
+          child: Icon(
+            Icons.add,
+            color: !_roundActive && _currentTier < hexGridColumns - 1
+                ? Colors.white54
+                : Colors.white12,
+            size: 24,
+          ),
+        ),
+      ],
     );
   }
 
@@ -631,7 +721,8 @@ class _LevelCardScreenState extends State<LevelCardScreen> {
           orientation: HexagonOrientation.flatTop,
           glowing: isGlowing,
           outlineOnly: outlineOnly,
-          onTap: () => _onTokenTapped(nugget),
+          onTapDown: () => _onTokenTapped(nugget),
+          onTapUp: () => _onTokenReleased(),
         ),
       ),
     );
@@ -662,7 +753,9 @@ class _LevelCardScreenState extends State<LevelCardScreen> {
             width: qSize,
             height: qSize,
             child: CustomPaint(
-              painter: _HexFillPainter(_questionTokenColor),
+              painter: _questionTokenShowOutline
+                  ? _HexButtonPainter(fillColor: _questionTokenColor, outlineColor: Colors.white)
+                  : _HexFillPainter(_questionTokenColor),
               child: _roundActive && !_hideQuestionPoints && _session != null &&
                   _session!.levelSpecs.levelType != LevelType.warmUp
                   ? Center(
@@ -823,6 +916,97 @@ Path _flatTopHexContainerPath(Size size, {double inset = 0.98}) {
   }
   path.close();
   return path;
+}
+
+class _ConnectionLinesPainter extends CustomPainter {
+  final List<LadderSlot> slots;
+  final List<Offset> positions;
+  final double gridOffsetX;
+  final double gridOffsetY;
+  final List<List<int>> allowedMotions;
+
+  _ConnectionLinesPainter({
+    required this.slots,
+    required this.positions,
+    required this.gridOffsetX,
+    required this.gridOffsetY,
+    required this.allowedMotions,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // Build degree → position lookup.
+    final degreeToPos = <int, Offset>{};
+    for (int i = 0; i < slots.length; i++) {
+      final degree = slots[i].nugget.scaleDegree;
+      if (!degreeToPos.containsKey(degree)) {
+        degreeToPos[degree] = Offset(
+          gridOffsetX + positions[i].dx,
+          gridOffsetY + positions[i].dy,
+        );
+      }
+    }
+
+    final paint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.25)
+      ..strokeWidth = 1.5
+      ..style = PaintingStyle.stroke;
+
+    for (final motion in allowedMotions) {
+      if (motion.length < 2) continue;
+      final from = degreeToPos[motion[0]];
+      final to = degreeToPos[motion[1]];
+      if (from == null || to == null) continue;
+      canvas.drawLine(from, to, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _ConnectionLinesPainter old) => true;
+}
+
+/// Detects horizontal swipes using pointer events (bypasses gesture arena).
+class _SwipeDetector extends StatefulWidget {
+  final bool enabled;
+  final VoidCallback onSwipeLeft;
+  final VoidCallback onSwipeRight;
+  final Widget child;
+
+  const _SwipeDetector({
+    required this.enabled,
+    required this.onSwipeLeft,
+    required this.onSwipeRight,
+    required this.child,
+  });
+
+  @override
+  State<_SwipeDetector> createState() => _SwipeDetectorState();
+}
+
+class _SwipeDetectorState extends State<_SwipeDetector> {
+  Offset? _startPos;
+
+  @override
+  Widget build(BuildContext context) {
+    return Listener(
+      onPointerDown: widget.enabled ? (e) => _startPos = e.position : null,
+      onPointerUp: widget.enabled ? (e) {
+        if (_startPos == null) return;
+        final dx = e.position.dx - _startPos!.dx;
+        final dy = (e.position.dy - _startPos!.dy).abs();
+        _startPos = null;
+        // Only trigger if horizontal movement is dominant and > 50px.
+        if (dx.abs() > 50 && dx.abs() > dy * 1.5) {
+          if (dx < 0) {
+            widget.onSwipeLeft();
+          } else {
+            widget.onSwipeRight();
+          }
+        }
+      } : null,
+      child: widget.child,
+    );
+  }
 }
 
 class _HexContainerPainter extends CustomPainter {

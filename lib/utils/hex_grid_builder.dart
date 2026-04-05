@@ -3,7 +3,7 @@ import '../models/round_result.dart';
 import '../models/hex_grid_cell.dart';
 
 /// Number of notes-in-a-row columns to show (including future placeholders).
-const int hexGridColumns = 4;
+const int hexGridColumns = 8;
 
 /// Extract a short display label from a set name like "SET 1 (do-re)" → "do-re".
 String _displayLabel(String setName) {

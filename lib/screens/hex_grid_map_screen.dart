@@ -94,7 +94,9 @@ class _HexGridView extends StatelessWidget {
   Widget build(BuildContext context) {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(12),
-      child: Column(
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Column(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           // Column headers.
@@ -140,6 +142,7 @@ class _HexGridView extends StatelessWidget {
               ),
             ),
         ],
+        ),
       ),
     );
   }
