@@ -79,15 +79,17 @@ class _PracticeScreenState extends State<PracticeScreen> {
   final AudioService _audioService = AudioService();
   late final PracticeSession _session;
   bool _pulsing = false;
-  bool _sessionStarted = false;
   bool _roundActive = false;
   bool _sequencePlaying = false;
+  bool _listeningToSequence = false; // true while multi-note sequence is sounding
+  int _activeSequenceIndex = -1; // which sequence token is currently sounding
   bool _showRoundEnd = false;
   NoteNugget? _glowingNugget;
   NoteNugget? _wrongNugget;
   OverlayEntry? _splashEntry;
   bool _hideQuestionPoints = false;
   final GlobalKey _playButtonKey = GlobalKey();
+  int _generation = 0; // incremented on restart to invalidate stale callbacks
 
   /// Stable GlobalKeys for each token slot.
   late final Map<NoteNugget, GlobalKey> _tokenKeys;
@@ -120,27 +122,43 @@ class _PracticeScreenState extends State<PracticeScreen> {
     super.dispose();
   }
 
+  bool _advancePending = false;
+
   void _onSessionChanged() {
     if (_session.lastResult == AnswerResult.correct) {
-      Future.delayed(const Duration(milliseconds: 800), () {
-        if (mounted) {
+      final gen = _generation;
+      if (_session.sequenceComplete && !_advancePending) {
+        _advancePending = true;
+        Future.delayed(const Duration(milliseconds: 800), () {
+          if (!mounted || gen != _generation) return;
           setState(() => _glowingNugget = null);
-          if (!_session.roundComplete) {
-            _session.nextQuestion();
-            _playCurrentQuestion();
-          } else if (widget.levelSpecs.levelType == LevelType.warmUp) {
-            // Warm-ups loop — restart the series automatically.
-            _session.restart();
-            _playCurrentQuestion();
-          } else {
-            Future.delayed(const Duration(milliseconds: 1000), () {
-              if (mounted) setState(() => _showRoundEnd = true);
-            });
+
+          Future.delayed(const Duration(milliseconds: 600), () {
+            if (!mounted || gen != _generation) return;
+            _advancePending = false;
+            _isPlayingQuestion = false;
+            if (!_session.roundComplete) {
+              _session.nextQuestion();
+              _playCurrentQuestion();
+            } else if (widget.levelSpecs.levelType == LevelType.warmUp) {
+              _session.restart();
+              _playCurrentQuestion();
+            } else {
+              Future.delayed(const Duration(milliseconds: 1000), () {
+                if (mounted && gen == _generation) {
+                  setState(() => _showRoundEnd = true);
+                }
+              });
+            }
+          });
+        });
+      } else if (!_session.sequenceComplete) {
+        Future.delayed(const Duration(milliseconds: 800), () {
+          if (mounted && gen == _generation) {
+            setState(() => _glowingNugget = null);
           }
-        }
-      });
-    } else if (_session.lastResult == null && _sessionStarted) {
-      _playCurrentQuestion();
+        });
+      }
     }
   }
 
@@ -155,25 +173,40 @@ class _PracticeScreenState extends State<PracticeScreen> {
   }
 
   void _startOrReplay() {
-    if (!_sessionStarted) {
-      setState(() {
-        _sessionStarted = true;
-        _roundActive = true;
-      });
+    if (_isPlayingQuestion) return; // debounce
+    if (!_roundActive) {
+      setState(() => _roundActive = true);
     }
     _playCurrentQuestion();
   }
 
+  bool _isPlayingQuestion = false;
+
   Future<void> _playCurrentQuestion() async {
-    final question = _session.currentQuestion;
-    if (question == null) return;
+    if (_isPlayingQuestion) return; // prevent overlapping playback
+    final sequence = _session.currentSequence;
+    if (sequence.isEmpty) return;
+    _isPlayingQuestion = true;
     final musicalState = context.read<MusicalState>();
-    final midiNote = musicalState.getMidiNote(question);
-    setState(() { _pulsing = true; _hideQuestionPoints = false; });
-    await _audioService.playTone(midiNote);
-    Future.delayed(const Duration(milliseconds: 450), () {
-      if (mounted) setState(() => _pulsing = false);
+
+    setState(() { _pulsing = true; _hideQuestionPoints = false; _listeningToSequence = true; });
+
+    for (int i = 0; i < sequence.length; i++) {
+      if (!mounted) { _isPlayingQuestion = false; return; }
+      final midiNote = musicalState.getMidiNote(sequence[i]);
+      setState(() => _activeSequenceIndex = i);
+      await _audioService.playTone(midiNote);
+      // Wait for tone duration + gap between notes.
+      await Future.delayed(const Duration(milliseconds: 400));
+    }
+
+    if (!mounted) { _isPlayingQuestion = false; return; }
+    setState(() {
+      _pulsing = false;
+      _listeningToSequence = false;
+      _activeSequenceIndex = -1;
     });
+    _isPlayingQuestion = false;
   }
 
   /// Resolve a grid token (pitch-class position) to the level's actual
@@ -188,7 +221,9 @@ class _PracticeScreenState extends State<PracticeScreen> {
   }
 
   void _onTokenTapped(NoteNugget gridNugget) {
-    if (_sequencePlaying || _session.lastResult != null) return;
+    if (_sequencePlaying || _listeningToSequence) return;
+    // For single-note: block if last result pending. For sequences: only block if sequence complete.
+    if (_session.lastResult != null && _session.sequenceComplete) return;
 
     final levelNugget = _resolveToLevelNugget(gridNugget);
     if (levelNugget == null) return;
@@ -353,7 +388,13 @@ class _PracticeScreenState extends State<PracticeScreen> {
                         )
                       else
                         _ScoreBar(session: session),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 8),
+                      _SequenceTokenRow(
+                        session: session,
+                        activeIndex: _activeSequenceIndex,
+                        mode: context.read<MusicalState>().currentMode,
+                      ),
+                      const SizedBox(height: 8),
                       Expanded(
                         child: _TokenGrid(
                           levelSpecs: widget.levelSpecs,
@@ -362,6 +403,7 @@ class _PracticeScreenState extends State<PracticeScreen> {
                           wrongNugget: _wrongNugget,
                           tokenKeys: _tokenKeys,
                           onTap: _onTokenTapped,
+                          dimmed: _listeningToSequence,
                           playButton: _PlayButton(
                             key: _playButtonKey,
                             onPlay: _startOrReplay,
@@ -379,11 +421,21 @@ class _PracticeScreenState extends State<PracticeScreen> {
                 if (_showRoundEnd)
                   _RoundEndOverlay(
                     session: session,
-                    onRestart: () => setState(() {
-                      _showRoundEnd = false;
-                      _roundActive = false;
+                    onRestart: () {
+                      _generation++;
+                      setState(() {
+                        _showRoundEnd = false;
+                        _roundActive = false;
+                        _advancePending = false;
+                        _isPlayingQuestion = false;
+                        _glowingNugget = null;
+                        _wrongNugget = null;
+                        _hideQuestionPoints = false;
+                        _listeningToSequence = false;
+                        _activeSequenceIndex = -1;
+                      });
                       _session.restart();
-                    }),
+                    },
                     onNextLevel: () {
                       final next = widget.nextLevelSpecs;
                       if (next != null) {
@@ -469,6 +521,51 @@ class _ScoreBar extends StatelessWidget {
   }
 }
 
+
+/// Row of hexagons at the top of the game board showing the sequence length.
+/// Each hex starts white and fills with the note's color when correctly answered.
+class _SequenceTokenRow extends StatelessWidget {
+  final PracticeSession session;
+  final int activeIndex; // which hex is currently sounding (-1 = none)
+  final Mode mode;
+
+  const _SequenceTokenRow({
+    required this.session,
+    required this.activeIndex,
+    required this.mode,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final inARow = session.inARow;
+    final answered = session.sequenceAnswered;
+    const hexSize = 36.0;
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: List.generate(inARow, (i) {
+        Color fillColor;
+        if (i < answered.length && answered[i] != null) {
+          // Answered correctly — show the note's color.
+          fillColor = ToneTokenColors.getColor(answered[i]!.getChromaticOffset(mode));
+        } else {
+          fillColor = Colors.white;
+        }
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 3),
+          child: SizedBox(
+            width: hexSize,
+            height: hexSize,
+            child: CustomPaint(
+              painter: _HexFillPainter(fillColor),
+            ),
+          ),
+        );
+      }),
+    );
+  }
+}
 
 class _PlayButton extends StatefulWidget {
   final VoidCallback onPlay;
@@ -576,6 +673,7 @@ class _TokenGrid extends StatelessWidget {
   final void Function(NoteNugget) onTap;
   final Widget playButton;
   final TokenGridLayout layout;
+  final bool dimmed;
 
   const _TokenGrid({
     required this.levelSpecs,
@@ -586,6 +684,7 @@ class _TokenGrid extends StatelessWidget {
     required this.onTap,
     required this.playButton,
     this.layout = TokenGridLayout.ladder,
+    this.dimmed = false,
   });
 
   @override
@@ -725,22 +824,25 @@ class _TokenGrid extends StatelessWidget {
     final isWrong = wrongNugget != null &&
         nugget.samePitchClass(wrongNugget!);
 
-    return AnimatedContainer(
-      key: tokenKeys[nugget],
-      duration: const Duration(milliseconds: 120),
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        boxShadow: isWrong
-            ? [BoxShadow(color: Colors.red.withValues(alpha: 0.85), blurRadius: 20, spreadRadius: 6)]
-            : [],
-      ),
-      child: ToneToken(
-        noteNugget: nugget,
-        size: size,
-        orientation: HexagonOrientation.flatTop,
-        glowing: isGlowing,
-        outlineOnly: !levelSpecs.answerTokensMakeASound,
+    return Opacity(
+      opacity: dimmed ? 0.3 : 1.0,
+      child: AnimatedContainer(
+        key: tokenKeys[nugget],
+        duration: const Duration(milliseconds: 120),
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          boxShadow: isWrong
+              ? [BoxShadow(color: Colors.red.withValues(alpha: 0.85), blurRadius: 20, spreadRadius: 6)]
+              : [],
+        ),
+        child: ToneToken(
+          noteNugget: nugget,
+          size: size,
+          orientation: HexagonOrientation.flatTop,
+          glowing: isGlowing,
+          outlineOnly: !levelSpecs.answerTokensMakeASound,
         onTap: () => onTap(nugget),
+        ),
       ),
     );
   }

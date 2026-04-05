@@ -74,6 +74,77 @@
     },
 
     {
+      "id": "level01b",
+      "title": "Warm-Up: First Step ×2",
+      "set": "SET 1 (do-re)",
+      "levelType": "warmUp",
+      "availableNoteNuggets": [
+        {"scaleDegree": 1, "chromaticAlteration": 0, "octave": 0},
+        {"scaleDegree": 2, "chromaticAlteration": 0, "octave": 0}
+      ],
+      "simpleNuggetSeries": [1,2,1,1,2,1,2,2,1,2,1,1,2,2,1,2,2,1,1,2],
+      "allowedMotions": [[1,2],[2,1]],
+      "puzzleGenerationMethod": "seriesForwardOnly",
+      "questionTokenSymbolMode": "colorOnly",
+      "answerTokensMakeASound": true,
+      "howManyInARow": 2,
+      "widestChromaticRange": 4,
+      "preferredMode": "major",
+      "preferredTonalCenter": "C",
+      "preferredFirstNote": {"scaleDegree": 1, "chromaticAlteration": 0, "octave": 0},
+      "questionsPerRound": 10,
+      "pointTiers": [10, 5, 3, 1],
+      "pointsToClear": 60,
+      "pointsToMaster": 80
+    },
+
+    {
+      "id": "level02b",
+      "title": "Practice: First Step ×2",
+      "set": "SET 1 (do-re)",
+      "levelType": "practice",
+      "availableNoteNuggets": [
+        {"scaleDegree": 1, "chromaticAlteration": 0, "octave": 0},
+        {"scaleDegree": 2, "chromaticAlteration": 0, "octave": 0}
+      ],
+      "allowedMotions": [[1,2],[2,1]],
+      "puzzleGenerationMethod": "shiftingProbabilities",
+      "questionTokenSymbolMode": "blank",
+      "answerTokensMakeASound": true,
+      "howManyInARow": 2,
+      "widestChromaticRange": 4,
+      "preferredMode": "major",
+      "preferredTonalCenter": "C",
+      "questionsPerRound": 10,
+      "pointTiers": [10, 5, 3, 1],
+      "pointsToClear": 60,
+      "pointsToMaster": 80
+    },
+
+    {
+      "id": "level03b",
+      "title": "Challenge: First Step ×2",
+      "set": "SET 1 (do-re)",
+      "levelType": "challenge",
+      "availableNoteNuggets": [
+        {"scaleDegree": 1, "chromaticAlteration": 0, "octave": 0},
+        {"scaleDegree": 2, "chromaticAlteration": 0, "octave": 0}
+      ],
+      "allowedMotions": [[1,2],[2,1]],
+      "puzzleGenerationMethod": "shiftingProbabilities",
+      "questionTokenSymbolMode": "blank",
+      "answerTokensMakeASound": false,
+      "howManyInARow": 2,
+      "widestChromaticRange": 4,
+      "preferredMode": "major",
+      "preferredTonalCenter": "C",
+      "questionsPerRound": 10,
+      "pointTiers": [10, 5, 3, 1],
+      "pointsToClear": 60,
+      "pointsToMaster": 80
+    },
+
+    {
       "id": "level04",
       "title": "Warm-Up: Ti Totalled",
       "set": "SET 2 (do-ti)",
