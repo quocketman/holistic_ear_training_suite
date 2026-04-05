@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/level_specs.dart';
+import '../models/enums.dart';
+import '../widgets/connection_visualizer.dart';
 import 'practice_screen.dart';
 
 class LevelSelectScreen extends StatelessWidget {
@@ -99,7 +101,14 @@ class _LevelCard extends StatelessWidget {
                     ),
                   ),
                 ),
-                Icon(Icons.arrow_forward_ios, color: Colors.grey[600], size: 16),
+                SizedBox(
+                  width: 40,
+                  height: 80,
+                  child: ConnectionVisualizer(
+                    levelSpecs: level,
+                    mode: level.preferredMode ?? Mode.major,
+                  ),
+                ),
               ],
             ),
           ),

@@ -81,6 +81,10 @@ class LevelSpecs {
   /// Each entry is a scaleDegree (e.g. 1, 2, 7). The round ends when exhausted.
   final List<int>? simpleNuggetSeries;
 
+  /// Pairs of scale degrees representing allowed melodic motions.
+  /// e.g. [[1,2],[2,1]] means do→re and re→do are allowed.
+  final List<List<int>> allowedMotions;
+
   // ── Round & scoring ─────────────────────────────────────────────────────────
 
   /// Number of questions in a single round.
@@ -113,6 +117,7 @@ class LevelSpecs {
     this.levelType = LevelType.practice,
     this.preferredFirstNote,
     this.simpleNuggetSeries,
+    this.allowedMotions = const [],
     this.questionsPerRound = 20,
     this.pointTiers = const [10, 5, 3, 1],
     this.pointsToClear = 160,   // 80% of 200
@@ -151,6 +156,11 @@ class LevelSpecs {
       simpleNuggetSeries: json['simpleNuggetSeries'] != null
           ? (json['simpleNuggetSeries'] as List).cast<int>()
           : null,
+      allowedMotions: json['allowedMotions'] != null
+          ? (json['allowedMotions'] as List)
+              .map((pair) => (pair as List).cast<int>())
+              .toList()
+          : const [],
       questionsPerRound: (json['questionsPerRound'] as int?) ?? 20,
       pointTiers: json['pointTiers'] != null
           ? (json['pointTiers'] as List).cast<int>()

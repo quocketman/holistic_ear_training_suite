@@ -9,9 +9,10 @@ import '../models/tone_token_colors.dart';
 import '../services/audio_service.dart';
 import '../widgets/tone_token.dart';
 import '../models/enums.dart';
+import '../utils/ladder_layout.dart';
 
-/// Full chromatic scale — shared by the grid and the state for key lookup.
-/// Index 0 = high do, 1–11 = ra through ti, 12 = low do (one octave below).
+/// Full chromatic scale — used by the whole-tone layout.
+/// Index 0 = do, 1–11 = di through ti, 12 = low do (one octave below).
 final _chromaticScale = [
   NoteNugget(scaleDegree: 1, chromaticAlteration: 0),            // 0: do
   NoteNugget(scaleDegree: 1, chromaticAlteration: 1),            // 1: di/ra
@@ -88,14 +89,20 @@ class _PracticeScreenState extends State<PracticeScreen> {
   bool _hideQuestionPoints = false;
   final GlobalKey _playButtonKey = GlobalKey();
 
-  /// Stable GlobalKeys for each token in the chromatic scale.
+  /// Stable GlobalKeys for each token slot.
   late final Map<NoteNugget, GlobalKey> _tokenKeys;
+  late final List<LadderSlot> _ladderSlots;
 
   @override
   void initState() {
     super.initState();
-    _tokenKeys = {for (final n in _chromaticScale) n: GlobalKey()};
     final musicalState = context.read<MusicalState>();
+    _ladderSlots = buildLadderSlots(
+      availableNotes: widget.levelSpecs.availableNoteNuggets,
+      mode: musicalState.currentMode,
+      widestChromaticRange: widget.levelSpecs.widestChromaticRange,
+    );
+    _tokenKeys = {for (final s in _ladderSlots) s.nugget: GlobalKey()};
     _session = PracticeSession(
       levelSpecs: widget.levelSpecs,
       musicalState: musicalState,
@@ -548,16 +555,16 @@ class _PlayButtonState extends State<_PlayButton>
   }
 }
 
-/// A slot in the dynamic token grid.
-class _TokenSlot {
-  /// The NoteNugget from _chromaticScale (for display and GlobalKey lookup).
-  final NoteNugget gridNugget;
-  /// Whether a level note occupies this slot.
-  final bool isActive;
-  /// Horizontal alignment: -1 = left, 0 = center, 1 = right.
-  int side = 0;
+/// Layout strategy for the token grid.
+enum TokenGridLayout {
+  /// Diatonic alternating ladder: one token per scale degree, alternating
+  /// left/right, vertical spacing proportional to chromatic half-steps.
+  ladder,
 
-  _TokenSlot({required this.gridNugget, required this.isActive});
+  /// Chromatic whole-tone: one token per chromatic position within the
+  /// widestChromaticRange, equal row heights. (Original layout, stubbed
+  /// for future use / layout transitions.)
+  chromatic,
 }
 
 class _TokenGrid extends StatelessWidget {
@@ -568,6 +575,7 @@ class _TokenGrid extends StatelessWidget {
   final Map<NoteNugget, GlobalKey> tokenKeys;
   final void Function(NoteNugget) onTap;
   final Widget playButton;
+  final TokenGridLayout layout;
 
   const _TokenGrid({
     required this.levelSpecs,
@@ -577,59 +585,102 @@ class _TokenGrid extends StatelessWidget {
     required this.tokenKeys,
     required this.onTap,
     required this.playButton,
+    this.layout = TokenGridLayout.ladder,
   });
 
-  /// Build a list of slots for [widestChromaticRange] chromatic positions,
-  /// starting from the lowest available note. Each slot maps to a pitch class
-  /// in _chromaticScale. Active slots have a level note; inactive are dimmed.
-  List<_TokenSlot> _buildSlots() {
+  @override
+  Widget build(BuildContext context) {
+    return switch (layout) {
+      TokenGridLayout.ladder => _buildLadder(),
+      TokenGridLayout.chromatic => _buildChromatic(),
+    };
+  }
+
+  // ── Ladder layout ──────────────────────────────────────────────────────────
+
+  Widget _buildLadder() {
+    const tokenSize = 80.0;
+    const gridWidth = tokenSize * 3.2;
+
+    final slots = buildLadderSlots(
+      availableNotes: levelSpecs.availableNoteNuggets,
+      mode: mode,
+      widestChromaticRange: levelSpecs.widestChromaticRange,
+    );
+
+    final gridHeight = ladderHeight(slots: slots, tokenSize: tokenSize);
+
+    return SingleChildScrollView(
+      child: Builder(
+        builder: (context) {
+        final size = Size(gridWidth, gridHeight);
+        final positions = positionsForSlots(
+          slots: slots,
+          size: size,
+          tokenSize: tokenSize,
+        );
+
+        return SizedBox(
+          width: gridWidth,
+          height: gridHeight,
+          child: Stack(
+            children: [
+              for (int i = 0; i < slots.length; i++)
+                Positioned(
+                  left: positions[i].dx - tokenSize / 2,
+                  top: positions[i].dy - tokenSize / 2,
+                  width: tokenSize,
+                  height: tokenSize,
+                  child: _buildToken(slots[i].nugget, slots[i].isActive, tokenSize),
+                ),
+              Positioned.fill(
+                child: Center(child: playButton),
+              ),
+            ],
+          ),
+        );
+      },
+      ),
+    );
+  }
+
+  // ── Chromatic layout (stubbed for future layout transitions) ───────────────
+
+  Widget _buildChromatic() {
     final available = levelSpecs.availableNoteNuggets;
 
-    // Absolute chromatic position = chromaticOffset + octave * 12
     int absPos(NoteNugget n) => n.getChromaticOffset(mode) + n.octave * 12;
-
-    // Find the lowest absolute position among available notes.
     final activePositions = {for (final n in available) absPos(n)};
     final lowest = activePositions.reduce((a, b) => a < b ? a : b);
 
     final range = levelSpecs.widestChromaticRange;
-    final slots = <_TokenSlot>[];
+    final slots = <({NoteNugget nugget, bool isActive, int side})>[];
 
     for (int i = 0; i < range; i++) {
       final pos = lowest + i;
-      final chromaticIndex = ((pos % 12) + 12) % 12; // always 0-11
+      final chromaticIndex = ((pos % 12) + 12) % 12;
       final gridNugget = _chromaticScale[chromaticIndex];
-      slots.add(_TokenSlot(
-        gridNugget: gridNugget,
+      slots.add((
+        nugget: gridNugget,
         isActive: activePositions.contains(pos),
+        side: 0,
       ));
     }
 
-    // Assign left/right/center using the original alternating algorithm:
-    // toggle flips at each slot that has an active note;
-    // first and last slots are always centered.
+    // Assign left/right/center: toggle flips at each active note.
     int toggle = 1;
+    final assignedSlots = <({NoteNugget nugget, bool isActive, int side})>[];
     for (int i = 0; i < slots.length; i++) {
       if (slots[i].isActive) toggle *= -1;
-      if (i == 0 || i == slots.length - 1) {
-        slots[i].side = 0; // centered
-      } else {
-        slots[i].side = toggle; // -1 left, +1 right
-      }
+      final side = (i == 0 || i == slots.length - 1) ? 0 : toggle;
+      assignedSlots.add((nugget: slots[i].nugget, isActive: slots[i].isActive, side: side));
     }
 
-    return slots;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final slots = _buildSlots();
     const tokenSize = 80.0;
     const rowHeight = tokenSize + 2.0;
     const gridWidth = tokenSize * 3.2;
 
-    // Render top-to-bottom (slots are bottom-to-top, so reverse).
-    final displaySlots = slots.reversed.toList();
+    final displaySlots = assignedSlots.reversed.toList();
 
     return Stack(
       alignment: Alignment.center,
@@ -647,7 +698,7 @@ class _TokenGrid extends StatelessWidget {
               height: rowHeight,
               child: Align(
                 alignment: alignment,
-                child: _buildToken(slot, tokenSize),
+                child: _buildToken(slot.nugget, slot.isActive, tokenSize),
               ),
             );
           }).toList(),
@@ -657,11 +708,10 @@ class _TokenGrid extends StatelessWidget {
     );
   }
 
-  Widget _buildToken(_TokenSlot slot, double size) {
-    final nugget = slot.gridNugget;
+  // ── Token rendering (shared by both layouts) ───────────────────────────────
 
-    if (!slot.isActive) {
-      // Ghost token: clear fill, white outline.
+  Widget _buildToken(NoteNugget nugget, bool isActive, double size) {
+    if (!isActive) {
       return SizedBox(
         key: tokenKeys[nugget],
         width: size,
