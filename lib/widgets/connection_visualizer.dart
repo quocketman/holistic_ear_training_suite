@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import '../models/level_specs.dart';
 import '../models/enums.dart';
@@ -11,11 +12,13 @@ import '../utils/ladder_layout.dart';
 class ConnectionVisualizer extends StatelessWidget {
   final LevelSpecs levelSpecs;
   final Mode mode;
+  final bool showOutlines;
 
   const ConnectionVisualizer({
     super.key,
     required this.levelSpecs,
     required this.mode,
+    this.showOutlines = false,
   });
 
   @override
@@ -28,8 +31,15 @@ class ConnectionVisualizer extends StatelessWidget {
           mode: mode,
           widestChromaticRange: levelSpecs.widestChromaticRange,
         );
-        // Scale dot size relative to widget — roughly 1/5 of width.
-        final dotSize = size.width * 0.22;
+
+        // Scale dot size to fit: available height = dotSize + semitones * dotSize
+        // so dotSize = availableHeight / (1 + totalSemitones).
+        final totalSemitones = slots.isNotEmpty ? slots.last.semitoneFromBottom : 0;
+        final maxDotFromHeight = totalSemitones > 0
+            ? size.height / (1 + totalSemitones)
+            : size.height * 0.3;
+        final maxDotFromWidth = size.width * 0.35;
+        final dotSize = min(maxDotFromHeight, maxDotFromWidth);
 
         final positions = positionsForSlots(
           slots: slots,
@@ -45,6 +55,7 @@ class ConnectionVisualizer extends StatelessWidget {
             allowedMotions: levelSpecs.allowedMotions,
             mode: mode,
             dotSize: dotSize,
+            showOutlines: showOutlines,
           ),
         );
       },
@@ -58,6 +69,7 @@ class _ConnectionPainter extends CustomPainter {
   final List<List<int>> allowedMotions;
   final Mode mode;
   final double dotSize;
+  final bool showOutlines;
 
   _ConnectionPainter({
     required this.slots,
@@ -65,6 +77,7 @@ class _ConnectionPainter extends CustomPainter {
     required this.allowedMotions,
     required this.mode,
     required this.dotSize,
+    required this.showOutlines,
   });
 
   @override
@@ -101,18 +114,37 @@ class _ConnectionPainter extends CustomPainter {
       if (slot.isActive) {
         final chromaticOffset = slot.nugget.getChromaticOffset(mode);
         final color = ToneTokenColors.getColor(chromaticOffset);
-        canvas.drawCircle(center, radius, Paint()..color = color);
+        final hexPath = _flatTopHexPath(center, radius);
+        canvas.drawPath(hexPath, Paint()..color = color);
+        if (showOutlines) {
+          canvas.drawPath(
+            hexPath,
+            Paint()
+              ..color = Colors.white
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 1.0,
+          );
+        }
+      }
+      // Skip ghost dots — too noisy at small sizes.
+    }
+  }
+
+  /// Flat-top hexagon path centered at [center] with the given [radius].
+  Path _flatTopHexPath(Offset center, double radius) {
+    final path = Path();
+    for (int i = 0; i < 6; i++) {
+      final angle = (60.0 * i) * pi / 180.0;
+      final x = center.dx + radius * cos(angle);
+      final y = center.dy + radius * sin(angle);
+      if (i == 0) {
+        path.moveTo(x, y);
       } else {
-        canvas.drawCircle(
-          center,
-          radius,
-          Paint()
-            ..color = Colors.white.withValues(alpha: 0.2)
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 1.0,
-        );
+        path.lineTo(x, y);
       }
     }
+    path.close();
+    return path;
   }
 
   @override

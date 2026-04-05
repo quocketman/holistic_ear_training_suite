@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'level_select_screen.dart';
+import 'hex_grid_map_screen.dart';
 import 'sound_design_screen.dart';
 
 class HomeScreen extends StatelessWidget {
@@ -43,7 +43,7 @@ class HomeScreen extends StatelessWidget {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => const LevelSelectScreen(),
+                      builder: (context) => const HexGridMapScreen(),
                     ),
                   );
                 },

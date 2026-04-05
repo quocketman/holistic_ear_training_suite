@@ -39,6 +39,9 @@ class LevelSpecs {
 
   final String levelTitle;
 
+  /// Set grouping name from JSON, e.g. "SET 1 (do-re)".
+  final String setName;
+
   /// The NoteNuggets available as both questions and answers in this level.
   final List<NoteNugget> availableNoteNuggets;
 
@@ -103,6 +106,7 @@ class LevelSpecs {
   const LevelSpecs({
     required this.id,
     required this.levelTitle,
+    this.setName = '',
     required this.availableNoteNuggets,
     this.howManyAtATime = 1,
     this.howManyInARow = 1,
@@ -134,6 +138,7 @@ class LevelSpecs {
     return LevelSpecs(
       id: json['id'] as String,
       levelTitle: json['title'] as String,
+      setName: (json['set'] as String?) ?? '',
       levelType: LevelType.values.byName(json['levelType'] as String),
       availableNoteNuggets: (json['availableNoteNuggets'] as List)
           .map((n) => nuggetFromJson(n as Map<String, dynamic>))
