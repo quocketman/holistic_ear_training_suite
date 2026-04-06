@@ -50,15 +50,55 @@ class HexCell extends StatelessWidget {
       );
     }
 
-    // Show connection visualizer inside the hex.
-    final rep = cell.representativeLevel!;
-    final mode = rep.preferredMode ?? Mode.major;
+    final inARow = cell.column + 1;
 
-    return Padding(
-      padding: EdgeInsets.all(size * 0.22),
-      child: ConnectionVisualizer(
-        levelSpecs: rep,
-        mode: mode,
+    // Column 1: show connection visualizer.
+    if (inARow == 1) {
+      final rep = cell.representativeLevel!;
+      final mode = rep.preferredMode ?? Mode.major;
+      return Padding(
+        padding: EdgeInsets.all(size * 0.22),
+        child: ConnectionVisualizer(
+          levelSpecs: rep,
+          mode: mode,
+        ),
+      );
+    }
+
+    // Columns 2+: show inARow count as small white hexagons in rows.
+    final dotSize = size * 0.14;
+    final spacing = dotSize * 0.2;
+
+    // Arrange in rows: 1→1, 2→2, 3→3, 4→2+2, 5→3+2, 6→3+3, 7→3+2+2, 8→3+3+2 (or similar)
+    final rows = <int>[];
+    var remaining = inARow;
+    while (remaining > 0) {
+      final rowCount = remaining >= 3 ? 3 : remaining;
+      rows.add(rowCount);
+      remaining -= rowCount;
+    }
+
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: rows.map((count) {
+          return Padding(
+            padding: EdgeInsets.symmetric(vertical: spacing / 2),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: List.generate(count, (i) {
+                return Padding(
+                  padding: EdgeInsets.symmetric(horizontal: spacing / 2),
+                  child: SizedBox(
+                    width: dotSize,
+                    height: dotSize,
+                    child: CustomPaint(painter: _MiniHexPainter()),
+                  ),
+                );
+              }),
+            ),
+          );
+        }).toList(),
       ),
     );
   }
@@ -163,4 +203,25 @@ class _HexCellPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _HexCellPainter old) => true;
+}
+
+class _MiniHexPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final cx = size.width / 2;
+    final cy = size.height / 2;
+    final r = size.width / 2 * 0.9;
+    final path = Path();
+    for (int i = 0; i < 6; i++) {
+      final angle = (60.0 * i) * pi / 180.0;
+      final x = cx + r * cos(angle);
+      final y = cy + r * sin(angle);
+      if (i == 0) { path.moveTo(x, y); } else { path.lineTo(x, y); }
+    }
+    path.close();
+    canvas.drawPath(path, Paint()..color = Colors.white);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter old) => false;
 }
