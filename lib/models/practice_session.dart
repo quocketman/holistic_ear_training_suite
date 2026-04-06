@@ -211,19 +211,33 @@ class PracticeSession extends ChangeNotifier {
       candidate = _selectByMethod();
     } else {
       int attempts = 0;
-      const maxAttempts = 10;
+      const maxAttempts = 50;
       do {
         candidate = _selectByMethod();
         attempts++;
       } while (
-        levelSpecs.noTwiceInARow &&
-        candidate == _lastQuestion &&
-        attempts < maxAttempts
+        attempts < maxAttempts &&
+        (
+          (levelSpecs.noTwiceInARow && candidate == _lastQuestion) ||
+          !_isMotionAllowed(_lastQuestion, candidate)
+        )
       );
     }
 
     _lastQuestion = candidate;
     return candidate;
+  }
+
+  /// Check if moving from [from] to [to] is allowed by the level's motions.
+  /// If allowedMotions is empty, all transitions are allowed.
+  /// If [from] is null (first note), any note is allowed.
+  bool _isMotionAllowed(NoteNugget? from, NoteNugget? to) {
+    if (from == null || to == null) return true;
+    final motions = levelSpecs.allowedMotions;
+    if (motions.isEmpty) return true;
+    final fromDeg = from.scaleDegree;
+    final toDeg = to.scaleDegree;
+    return motions.any((m) => m.length >= 2 && m[0] == fromDeg && m[1] == toDeg);
   }
 
   NoteNugget? _selectByMethod() {
