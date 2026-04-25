@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'hex_grid_map_screen.dart';
+import 'solfege_sequence_screen.dart';
 import 'sound_design_screen.dart';
 
 class HomeScreen extends StatelessWidget {
@@ -59,6 +60,22 @@ class HomeScreen extends StatelessWidget {
                     context,
                     MaterialPageRoute(
                       builder: (context) => const SoundDesignScreen(),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 16),
+              _buildExerciseCard(
+                context,
+                title: 'SEQUENCE',
+                description:
+                    'Render a solfège sequence as hexagons and export PNG',
+                icon: Icons.hexagon_outlined,
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const SolfegeSequenceScreen(),
                     ),
                   );
                 },
