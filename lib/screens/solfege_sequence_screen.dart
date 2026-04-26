@@ -147,22 +147,31 @@ class _SolfegeSequenceScreenState extends State<SolfegeSequenceScreen> {
               ],
             ),
           ),
+          // Live preview — fills available space.
           Expanded(
-            child: Center(
-              child: InteractiveViewer(
-                constrained: false,
-                minScale: 0.05,
-                maxScale: 2.0,
-                child: RepaintBoundary(
-                  key: _canvasKey,
-                  child: SizedBox(
-                    width: canvasSize.width,
-                    height: canvasSize.height,
-                    child: SolfegeSequenceCanvas(
-                      notes: _parsed.notes,
-                      layout: layout,
-                    ),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                return Center(
+                  child: SolfegeSequenceCanvas(
+                    notes: _parsed.notes,
+                    layout: layout,
+                    tokenSize: 50.0,
+                    fitToSize: Size(constraints.maxWidth - 24, constraints.maxHeight - 24),
                   ),
+                );
+              },
+            ),
+          ),
+          // Off-screen full-res canvas for PNG export.
+          Offstage(
+            child: RepaintBoundary(
+              key: _canvasKey,
+              child: SizedBox(
+                width: canvasSize.width,
+                height: canvasSize.height,
+                child: SolfegeSequenceCanvas(
+                  notes: _parsed.notes,
+                  layout: layout,
                 ),
               ),
             ),

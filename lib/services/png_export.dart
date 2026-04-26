@@ -1,7 +1,7 @@
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/rendering.dart';
+import 'package:flutter/widgets.dart';
 
 import 'png_export_native.dart'
     if (dart.library.js_interop) 'png_export_web.dart' as platform;

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../models/enums.dart';
 import '../utils/solfege_parser.dart';
 import 'solfege_hex_token.dart';
 
@@ -23,16 +22,21 @@ class SolfegeSequenceCanvas extends StatelessWidget {
   final CanvasLayout layout;
   final double tokenSize;
 
+  /// When provided, the canvas renders at this size instead of the fixed
+  /// layout pixel dimensions. Used for the live on-screen preview.
+  final Size? fitToSize;
+
   const SolfegeSequenceCanvas({
     super.key,
     required this.notes,
     required this.layout,
     this.tokenSize = 80.0,
+    this.fitToSize,
   });
 
   @override
   Widget build(BuildContext context) {
-    final size = layout.pixelSize;
+    final size = fitToSize ?? layout.pixelSize;
 
     return Container(
       width: size.width,
@@ -62,7 +66,6 @@ class SolfegeSequenceCanvas extends StatelessWidget {
           label: n.syllable,
           chromaticOffset: n.chromaticOffset,
           size: tokenSize,
-          orientation: HexagonOrientation.pointyTop,
         ),
       ));
     }
@@ -82,9 +85,8 @@ class SolfegeSequenceCanvas extends StatelessWidget {
         ? canvas.height
         : canvas.width;
 
-    // Time axis: evenly distribute notes with tokenSize step, centered.
-    final timeSpan = (notes.length - 1) * tokenSize;
-    final timeStart = (timeAxisLength - timeSpan) / 2;
+    // Time axis: left-aligned (or top-aligned for vertical), one tokenSize step per note.
+    final timeStart = tokenSize / 2;
 
     // Pitch axis: center the chromatic range.
     final pitchStart = (pitchAxisLength - pitchSpan) / 2;
