@@ -33,6 +33,7 @@ dependencies:
   # Local storage (works on mobile, desktop, and web)
   hive: ^2.2.3
   hive_flutter: ^1.1.0
+  google_fonts: ^8.0.2
 
 dev_dependencies:
   flutter_test:

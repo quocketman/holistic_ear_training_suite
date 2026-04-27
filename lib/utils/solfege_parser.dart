@@ -14,10 +14,14 @@ class SolfegeNote {
   final int chromaticOffset;
   final int octave;
 
+  /// A spacer takes up horizontal space but renders no token.
+  final bool isSpacer;
+
   const SolfegeNote({
     required this.syllable,
     required this.chromaticOffset,
     required this.octave,
+    this.isSpacer = false,
   });
 
   /// Total chromatic position from base do (octave 0, offset 0).
@@ -65,8 +69,23 @@ class SolfegeParser {
     final tokens = input.split(RegExp(r'\s+')).where((t) => t.isNotEmpty);
 
     for (final raw in tokens) {
-      var token = raw.toLowerCase().trim();
+      var token = raw.trim();
       if (token.isEmpty) continue;
+
+      // Underscores = spacers (one per underscore character).
+      if (RegExp(r'^_+$').hasMatch(token)) {
+        for (var i = 0; i < token.length; i++) {
+          notes.add(const SolfegeNote(
+            syllable: '_',
+            chromaticOffset: 0,
+            octave: 0,
+            isSpacer: true,
+          ));
+        }
+        continue;
+      }
+
+      token = token.toLowerCase();
 
       var octave = 0;
       while (token.endsWith("'")) {

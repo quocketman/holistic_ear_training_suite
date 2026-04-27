@@ -21,6 +21,7 @@ class SolfegeSequenceCanvas extends StatelessWidget {
   final List<SolfegeNote> notes;
   final CanvasLayout layout;
   final double tokenSize;
+  final String? title;
 
   /// When provided, the canvas renders at this size instead of the fixed
   /// layout pixel dimensions. Used for the live on-screen preview.
@@ -32,18 +33,38 @@ class SolfegeSequenceCanvas extends StatelessWidget {
     required this.layout,
     this.tokenSize = 80.0,
     this.fitToSize,
+    this.title,
   });
 
   @override
   Widget build(BuildContext context) {
     final size = fitToSize ?? layout.pixelSize;
+    final isPreview = fitToSize != null;
+    final titleFontSize = isPreview ? 20.0 : 48.0;
 
     return Container(
       width: size.width,
       height: size.height,
       color: Colors.black,
       child: Stack(
-        children: _positionedTokens(size),
+        children: [
+          if (title != null && title!.isNotEmpty)
+            Positioned(
+              top: isPreview ? 8 : 24,
+              left: 0,
+              right: 0,
+              child: Text(
+                title!,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: titleFontSize,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ..._positionedTokens(size),
+        ],
       ),
     );
   }
@@ -56,6 +77,7 @@ class SolfegeSequenceCanvas extends StatelessWidget {
     final tokens = <Widget>[];
     for (var i = 0; i < notes.length; i++) {
       final n = notes[i];
+      if (n.isSpacer) continue; // spacers take up position space but render nothing
       final p = positions[i];
       tokens.add(Positioned(
         left: p.dx - tokenSize / 2,
@@ -74,8 +96,14 @@ class SolfegeSequenceCanvas extends StatelessWidget {
 
   List<Offset> _computePositions(Size canvas) {
     final chromatics = notes.map((n) => n.totalChromatic).toList();
-    final minC = chromatics.reduce((a, b) => a < b ? a : b);
-    final maxC = chromatics.reduce((a, b) => a > b ? a : b);
+    // Only real notes affect pitch range (not spacers).
+    final realChromatics = [
+      for (var i = 0; i < notes.length; i++)
+        if (!notes[i].isSpacer) chromatics[i],
+    ];
+    if (realChromatics.isEmpty) return List.filled(notes.length, Offset.zero);
+    final minC = realChromatics.reduce((a, b) => a < b ? a : b);
+    final maxC = realChromatics.reduce((a, b) => a > b ? a : b);
     final pitchSpan = (maxC - minC) * tokenSize;
 
     final timeAxisLength = layout == CanvasLayout.horizontal

@@ -13,6 +13,7 @@ class SolfegeSequenceScreen extends StatefulWidget {
 
 class _SolfegeSequenceScreenState extends State<SolfegeSequenceScreen> {
   final _controller = TextEditingController();
+  final _titleController = TextEditingController();
   final _canvasKey = GlobalKey();
 
   SolfegeParseResult _parsed = const SolfegeParseResult(
@@ -25,6 +26,7 @@ class _SolfegeSequenceScreenState extends State<SolfegeSequenceScreen> {
   @override
   void dispose() {
     _controller.dispose();
+    _titleController.dispose();
     super.dispose();
   }
 
@@ -45,18 +47,19 @@ class _SolfegeSequenceScreenState extends State<SolfegeSequenceScreen> {
     if (_parsed.notes.isEmpty || _exporting) return;
     setState(() => _exporting = true);
     try {
+      // Use title for filename, falling back to generic prefix.
+      final title = _titleController.text.trim();
+      final prefix = title.isNotEmpty
+          ? title.replaceAll(RegExp(r'[^\w\s-]'), '').replaceAll(RegExp(r'\s+'), '_')
+          : 'solfege_sequence';
       final destination = await exportRepaintBoundaryToPng(
         boundaryKey: _canvasKey,
-        filenamePrefix: 'solfege_sequence',
+        filenamePrefix: prefix,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Saved: $destination')),
       );
-      _controller.clear();
-      setState(() {
-        _parsed = const SolfegeParseResult(notes: [], unrecognized: []);
-      });
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -65,6 +68,14 @@ class _SolfegeSequenceScreenState extends State<SolfegeSequenceScreen> {
     } finally {
       if (mounted) setState(() => _exporting = false);
     }
+  }
+
+  void _clear() {
+    _controller.clear();
+    _titleController.clear();
+    setState(() {
+      _parsed = const SolfegeParseResult(notes: [], unrecognized: []);
+    });
   }
 
   @override
@@ -106,6 +117,16 @@ class _SolfegeSequenceScreenState extends State<SolfegeSequenceScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 TextField(
+                  controller: _titleController,
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    labelText: 'Title',
+                    hintText: 'e.g. Mary Had a Little Lamb',
+                  ),
+                  onChanged: (_) => setState(() {}),
+                ),
+                const SizedBox(height: 8),
+                TextField(
                   controller: _controller,
                   onChanged: _onInputChanged,
                   decoration: const InputDecoration(
@@ -130,6 +151,15 @@ class _SolfegeSequenceScreenState extends State<SolfegeSequenceScreen> {
                         ),
                       ),
                     ),
+                    const SizedBox(width: 8),
+                    OutlinedButton.icon(
+                      onPressed: _parsed.notes.isEmpty && _titleController.text.isEmpty
+                          ? null
+                          : _clear,
+                      icon: const Icon(Icons.clear),
+                      label: const Text('Clear'),
+                    ),
+                    const SizedBox(width: 8),
                     FilledButton.icon(
                       onPressed:
                           _parsed.notes.isEmpty || _exporting ? null : _print,
@@ -157,6 +187,7 @@ class _SolfegeSequenceScreenState extends State<SolfegeSequenceScreen> {
                     layout: layout,
                     tokenSize: 50.0,
                     fitToSize: Size(constraints.maxWidth - 24, constraints.maxHeight - 24),
+                    title: _titleController.text.trim(),
                   ),
                 );
               },
@@ -172,6 +203,7 @@ class _SolfegeSequenceScreenState extends State<SolfegeSequenceScreen> {
                 child: SolfegeSequenceCanvas(
                   notes: _parsed.notes,
                   layout: layout,
+                  title: _titleController.text.trim(),
                 ),
               ),
             ),

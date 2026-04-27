@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../models/tone_token_colors.dart';
 
 /// Static hexagonal token rendered from a raw solfège label and chromatic
@@ -48,10 +49,10 @@ class SolfegeHexToken extends StatelessWidget {
           // Colored text.
           Text(
             label,
-            style: TextStyle(
+            style: GoogleFonts.sourceSans3(
               fontSize: size * 0.3,
               fontWeight: FontWeight.bold,
-              color: hexColor,
+              color: Colors.white,
             ),
             textAlign: TextAlign.center,
           ),
