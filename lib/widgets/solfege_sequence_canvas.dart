@@ -7,21 +7,31 @@ enum CanvasLayout {
   vertical,   // 1080×1920: time → y, pitch → x (higher = right)
 }
 
+enum CanvasJustify { left, center, right }
+
 extension CanvasLayoutSize on CanvasLayout {
-  Size get pixelSize => switch (this) {
+  /// Content area (excluding title).
+  Size get contentSize => switch (this) {
         CanvasLayout.horizontal => const Size(1920, 1080),
         CanvasLayout.vertical => const Size(1080, 1920),
       };
+
+  /// Title height added above the content area for export.
+  double get titleHeight => 100.0;
+
+  /// Full export size including title area.
+  Size get exportSize {
+    final content = contentSize;
+    return Size(content.width, content.height + titleHeight);
+  }
 }
 
-/// Lays out a sequence of [SolfegeNote] on a fixed-size canvas, with hexagons
-/// stepped by [tokenSize] along both axes (matching `ladder_layout`'s
-/// "one semitone = tokenSize" rule).
 class SolfegeSequenceCanvas extends StatelessWidget {
   final List<SolfegeNote> notes;
   final CanvasLayout layout;
   final double tokenSize;
   final String? title;
+  final CanvasJustify justify;
 
   /// When provided, the canvas renders at this size instead of the fixed
   /// layout pixel dimensions. Used for the live on-screen preview.
@@ -34,13 +44,16 @@ class SolfegeSequenceCanvas extends StatelessWidget {
     this.tokenSize = 80.0,
     this.fitToSize,
     this.title,
+    this.justify = CanvasJustify.left,
   });
 
   @override
   Widget build(BuildContext context) {
-    final size = fitToSize ?? layout.pixelSize;
+    final size = fitToSize ?? layout.exportSize;
     final isPreview = fitToSize != null;
     final titleFontSize = isPreview ? 20.0 : 48.0;
+    final titleAreaHeight = isPreview ? 30.0 : layout.titleHeight;
+    final hasTitle = title != null && title!.isNotEmpty;
 
     return Container(
       width: size.width,
@@ -48,9 +61,9 @@ class SolfegeSequenceCanvas extends StatelessWidget {
       color: Colors.black,
       child: Stack(
         children: [
-          if (title != null && title!.isNotEmpty)
+          if (hasTitle)
             Positioned(
-              top: isPreview ? 8 : 24,
+              top: isPreview ? 4 : 20,
               left: 0,
               right: 0,
               child: Text(
@@ -63,40 +76,70 @@ class SolfegeSequenceCanvas extends StatelessWidget {
                 ),
               ),
             ),
-          ..._positionedTokens(size),
+          ..._positionedTokens(size, hasTitle ? titleAreaHeight : 0),
         ],
       ),
     );
   }
 
-  List<Widget> _positionedTokens(Size canvas) {
+  /// Compute effective token size that fits everything in the content area.
+  double _effectiveTokenSize(Size canvas, double titleOffset) {
+    if (notes.isEmpty) return tokenSize;
+
+    final realChromatics = [
+      for (var i = 0; i < notes.length; i++)
+        if (!notes[i].isSpacer) notes[i].totalChromatic,
+    ];
+    if (realChromatics.isEmpty) return tokenSize;
+
+    final minC = realChromatics.reduce((a, b) => a < b ? a : b);
+    final maxC = realChromatics.reduce((a, b) => a > b ? a : b);
+    final pitchRange = maxC - minC;
+
+    final isPreview = fitToSize != null;
+    final margin = isPreview ? 20.0 : 80.0;
+
+    final timeAxisLength = (layout == CanvasLayout.horizontal
+        ? canvas.width
+        : canvas.height - titleOffset) - margin * 2;
+    final pitchAxisLength = (layout == CanvasLayout.horizontal
+        ? canvas.height - titleOffset
+        : canvas.width) - margin * 2;
+
+    final maxFromTime = notes.isNotEmpty ? timeAxisLength / notes.length : tokenSize;
+    final maxFromPitch = pitchRange > 0 ? pitchAxisLength / (pitchRange + 1) : pitchAxisLength;
+
+    return [tokenSize, maxFromTime, maxFromPitch].reduce((a, b) => a < b ? a : b);
+  }
+
+  List<Widget> _positionedTokens(Size canvas, double titleOffset) {
     if (notes.isEmpty) return const [];
 
-    final positions = _computePositions(canvas);
+    final ts = _effectiveTokenSize(canvas, titleOffset);
+    final positions = _computePositions(canvas, ts, titleOffset);
 
     final tokens = <Widget>[];
     for (var i = 0; i < notes.length; i++) {
       final n = notes[i];
-      if (n.isSpacer) continue; // spacers take up position space but render nothing
+      if (n.isSpacer) continue;
       final p = positions[i];
       tokens.add(Positioned(
-        left: p.dx - tokenSize / 2,
-        top: p.dy - tokenSize / 2,
-        width: tokenSize,
-        height: tokenSize,
+        left: p.dx - ts / 2,
+        top: p.dy - ts / 2,
+        width: ts,
+        height: ts,
         child: SolfegeHexToken(
           label: n.syllable,
           chromaticOffset: n.chromaticOffset,
-          size: tokenSize,
+          size: ts,
         ),
       ));
     }
     return tokens;
   }
 
-  List<Offset> _computePositions(Size canvas) {
+  List<Offset> _computePositions(Size canvas, double ts, double titleOffset) {
     final chromatics = notes.map((n) => n.totalChromatic).toList();
-    // Only real notes affect pitch range (not spacers).
     final realChromatics = [
       for (var i = 0; i < notes.length; i++)
         if (!notes[i].isSpacer) chromatics[i],
@@ -104,36 +147,44 @@ class SolfegeSequenceCanvas extends StatelessWidget {
     if (realChromatics.isEmpty) return List.filled(notes.length, Offset.zero);
     final minC = realChromatics.reduce((a, b) => a < b ? a : b);
     final maxC = realChromatics.reduce((a, b) => a > b ? a : b);
-    final pitchSpan = (maxC - minC) * tokenSize;
+    final pitchSpan = (maxC - minC) * ts;
 
-    final timeAxisLength = layout == CanvasLayout.horizontal
+    final isPreview = fitToSize != null;
+    final margin = isPreview ? 20.0 : 80.0;
+
+    final pitchAxisLength = (layout == CanvasLayout.horizontal
+        ? canvas.height - titleOffset
+        : canvas.width) - margin * 2;
+    final timeAxisLength = (layout == CanvasLayout.horizontal
         ? canvas.width
-        : canvas.height;
-    final pitchAxisLength = layout == CanvasLayout.horizontal
-        ? canvas.height
-        : canvas.width;
+        : canvas.height - titleOffset) - margin * 2;
 
-    // Time axis: left-aligned (or top-aligned for vertical), one tokenSize step per note.
-    final timeStart = tokenSize / 2;
+    // Pitch axis: center the chromatic range within the content area.
+    final pitchStart = margin + (pitchAxisLength - pitchSpan) / 2;
 
-    // Pitch axis: center the chromatic range.
-    final pitchStart = (pitchAxisLength - pitchSpan) / 2;
+    // Time axis: justify left, center, or right.
+    final timeSpan = (notes.length - 1) * ts;
+    final double timeStart;
+    switch (justify) {
+      case CanvasJustify.left:
+        timeStart = margin + ts / 2;
+      case CanvasJustify.center:
+        timeStart = margin + (timeAxisLength - timeSpan) / 2;
+      case CanvasJustify.right:
+        timeStart = margin + timeAxisLength - timeSpan - ts / 2;
+    }
 
     return List.generate(notes.length, (i) {
-      final timePos = timeStart + i * tokenSize;
-      // Higher pitch should be visually higher (up in horizontal, right in
-      // vertical). In screen coordinates, "up" = smaller y, "right" = larger x.
-      final pitchOffsetFromMin = (chromatics[i] - minC) * tokenSize;
+      final timePos = timeStart + i * ts;
+      final pitchOffsetFromMin = (chromatics[i] - minC) * ts;
 
       switch (layout) {
         case CanvasLayout.horizontal:
-          // y: bottom = lowest, top = highest.
           final y = canvas.height - pitchStart - pitchOffsetFromMin;
           return Offset(timePos, y);
         case CanvasLayout.vertical:
-          // x: left = lowest, right = highest.
           final x = pitchStart + pitchOffsetFromMin;
-          return Offset(x, timePos);
+          return Offset(x, titleOffset + timePos);
       }
     });
   }

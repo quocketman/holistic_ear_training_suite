@@ -21,6 +21,7 @@ class _SolfegeSequenceScreenState extends State<SolfegeSequenceScreen> {
     unrecognized: [],
   );
   CanvasLayout? _layoutOverride;
+  CanvasJustify _justify = CanvasJustify.left;
   bool _exporting = false;
 
   @override
@@ -81,13 +82,33 @@ class _SolfegeSequenceScreenState extends State<SolfegeSequenceScreen> {
   @override
   Widget build(BuildContext context) {
     final layout = _resolvedLayout(context);
-    final canvasSize = layout.pixelSize;
+    final canvasSize = layout.exportSize;
 
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         title: const Text('Solfège Sequence'),
         actions: [
+          // Justify buttons.
+          IconButton(
+            icon: const Icon(Icons.format_align_left),
+            color: _justify == CanvasJustify.left ? Colors.white : Colors.white38,
+            tooltip: 'Left',
+            onPressed: () => setState(() => _justify = CanvasJustify.left),
+          ),
+          IconButton(
+            icon: const Icon(Icons.format_align_center),
+            color: _justify == CanvasJustify.center ? Colors.white : Colors.white38,
+            tooltip: 'Center',
+            onPressed: () => setState(() => _justify = CanvasJustify.center),
+          ),
+          IconButton(
+            icon: const Icon(Icons.format_align_right),
+            color: _justify == CanvasJustify.right ? Colors.white : Colors.white38,
+            tooltip: 'Right',
+            onPressed: () => setState(() => _justify = CanvasJustify.right),
+          ),
+          const SizedBox(width: 8),
           PopupMenuButton<CanvasLayout?>(
             icon: const Icon(Icons.aspect_ratio),
             tooltip: 'Canvas layout',
@@ -106,6 +127,25 @@ class _SolfegeSequenceScreenState extends State<SolfegeSequenceScreen> {
                 child: Text('Vertical 1080×1920'),
               ),
             ],
+          ),
+          const SizedBox(width: 8),
+          IconButton(
+            icon: const Icon(Icons.clear),
+            tooltip: 'Clear',
+            onPressed: _parsed.notes.isEmpty && _titleController.text.isEmpty
+                ? null
+                : _clear,
+          ),
+          IconButton(
+            icon: _exporting
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  )
+                : const Icon(Icons.print),
+            tooltip: 'Print PNG',
+            onPressed: _parsed.notes.isEmpty || _exporting ? null : _print,
           ),
         ],
       ),
@@ -138,42 +178,19 @@ class _SolfegeSequenceScreenState extends State<SolfegeSequenceScreen> {
                   ),
                   textInputAction: TextInputAction.done,
                 ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        _statusLine(),
-                        style: TextStyle(
-                          color: _parsed.unrecognized.isNotEmpty
-                              ? Colors.redAccent
-                              : Colors.grey[400],
-                        ),
+                if (_parsed.unrecognized.isNotEmpty || _statusLine().isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      _statusLine(),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: _parsed.unrecognized.isNotEmpty
+                            ? Colors.redAccent
+                            : Colors.grey[500],
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    OutlinedButton.icon(
-                      onPressed: _parsed.notes.isEmpty && _titleController.text.isEmpty
-                          ? null
-                          : _clear,
-                      icon: const Icon(Icons.clear),
-                      label: const Text('Clear'),
-                    ),
-                    const SizedBox(width: 8),
-                    FilledButton.icon(
-                      onPressed:
-                          _parsed.notes.isEmpty || _exporting ? null : _print,
-                      icon: _exporting
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.print),
-                      label: const Text('Print PNG'),
-                    ),
-                  ],
-                ),
+                  ),
               ],
             ),
           ),
@@ -188,22 +205,29 @@ class _SolfegeSequenceScreenState extends State<SolfegeSequenceScreen> {
                     tokenSize: 50.0,
                     fitToSize: Size(constraints.maxWidth - 24, constraints.maxHeight - 24),
                     title: _titleController.text.trim(),
+                    justify: _justify,
                   ),
                 );
               },
             ),
           ),
-          // Off-screen full-res canvas for PNG export.
-          Offstage(
-            child: RepaintBoundary(
-              key: _canvasKey,
-              child: SizedBox(
-                width: canvasSize.width,
-                height: canvasSize.height,
-                child: SolfegeSequenceCanvas(
-                  notes: _parsed.notes,
-                  layout: layout,
-                  title: _titleController.text.trim(),
+          // Full-res canvas for PNG export — hidden but still laid out.
+          ClipRect(
+            child: Align(
+              alignment: Alignment.topLeft,
+              heightFactor: 0.001,
+              widthFactor: 0.001,
+              child: RepaintBoundary(
+                key: _canvasKey,
+                child: SizedBox(
+                  width: canvasSize.width,
+                  height: canvasSize.height,
+                  child: SolfegeSequenceCanvas(
+                    notes: _parsed.notes,
+                    layout: layout,
+                    title: _titleController.text.trim(),
+                    justify: _justify,
+                  ),
                 ),
               ),
             ),
