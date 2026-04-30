@@ -149,10 +149,8 @@ class _SolfegeSequenceScreenState extends State<SolfegeSequenceScreen> {
           ),
           Expanded(
             child: Center(
-              child: InteractiveViewer(
-                constrained: false,
-                minScale: 0.05,
-                maxScale: 2.0,
+              child: FittedBox(
+                fit: BoxFit.contain,
                 child: RepaintBoundary(
                   key: _canvasKey,
                   child: SizedBox(
