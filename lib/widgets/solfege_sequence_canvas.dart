@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../models/enums.dart';
 import '../utils/solfege_parser.dart';
 import 'solfege_hex_token.dart';
@@ -54,6 +55,14 @@ class SolfegeSequenceCanvas extends StatelessWidget {
     final positions = _computePositions(canvas);
 
     final tokens = <Widget>[];
+    final lyrics = <Widget>[];
+    final lyricStyle = GoogleFonts.sourceSans3(
+      fontSize: tokenSize * 0.22,
+      fontWeight: FontWeight.w500,
+      color: Colors.white,
+      height: 1.0,
+    );
+
     for (var i = 0; i < notes.length; i++) {
       final n = notes[i];
       final p = positions[i];
@@ -71,8 +80,20 @@ class SolfegeSequenceCanvas extends StatelessWidget {
           onTapUp: onNoteUp == null ? null : () => onNoteUp!(i),
         ),
       ));
+
+      final lyric = n.lyric;
+      if (lyric != null && lyric.isNotEmpty) {
+        lyrics.add(Positioned(
+          left: p.dx - tokenSize / 2,
+          top: p.dy + tokenSize / 2 + 2,
+          child: IgnorePointer(
+            child: Text(lyric, style: lyricStyle, textAlign: TextAlign.left),
+          ),
+        ));
+      }
     }
-    return tokens;
+    // Render lyrics after tokens so they appear above any token edge.
+    return [...tokens, ...lyrics];
   }
 
   List<Offset> _computePositions(Size canvas) {

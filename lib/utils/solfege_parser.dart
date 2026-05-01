@@ -1,10 +1,14 @@
-/// Parses a string of solfège syllables into a list of pitched notes.
+/// Parses a string of solfège syllables (and optional lyric pairings) into
+/// a list of pitched notes.
 ///
 /// Syntax:
-///   - Syllables separated by whitespace
+///   - Tokens separated by whitespace OR hyphen (`-`)
 ///   - Trailing `'` (apostrophe) raises octave by 1 each (e.g. `do'`, `do''`)
 ///   - Trailing `,` lowers octave by 1 each (e.g. `do,`, `do,,`)
-///   - Case-insensitive
+///   - Optional `/lyric` suffix attaches a lyric to the syllable
+///     (e.g. `do/twin re/kle`). The lyric is preserved verbatim, including
+///     case. Anything after the first `/` is the lyric.
+///   - Solfège portion is case-insensitive
 ///
 /// Recognised chromatic syllables (offset 0–11):
 ///   do(0) di/ra(1) re(2) ri/me(3) mi(4) fa(5) fi/se(6)
@@ -13,18 +17,21 @@ class SolfegeNote {
   final String syllable;
   final int chromaticOffset;
   final int octave;
+  final String? lyric;
 
   const SolfegeNote({
     required this.syllable,
     required this.chromaticOffset,
     required this.octave,
+    this.lyric,
   });
 
   /// Total chromatic position from base do (octave 0, offset 0).
   int get totalChromatic => chromaticOffset + octave * 12;
 
   @override
-  String toString() => '$syllable(off=$chromaticOffset, oct=$octave)';
+  String toString() =>
+      '$syllable(off=$chromaticOffset, oct=$octave${lyric == null ? '' : ', lyric=$lyric'})';
 }
 
 class SolfegeParseResult {
@@ -62,11 +69,24 @@ class SolfegeParser {
     final notes = <SolfegeNote>[];
     final unrecognized = <String>[];
 
-    final tokens = input.split(RegExp(r'\s+')).where((t) => t.isNotEmpty);
+    final tokens = input.split(RegExp(r'[\s\-]+')).where((t) => t.isNotEmpty);
 
     for (final raw in tokens) {
-      var token = raw.toLowerCase().trim();
-      if (token.isEmpty) continue;
+      // Split off optional lyric (everything after the first '/').
+      String solfPart = raw;
+      String? lyric;
+      final slash = raw.indexOf('/');
+      if (slash >= 0) {
+        solfPart = raw.substring(0, slash);
+        final rest = raw.substring(slash + 1);
+        if (rest.isNotEmpty) lyric = rest;
+      }
+
+      var token = solfPart.toLowerCase().trim();
+      if (token.isEmpty) {
+        unrecognized.add(raw);
+        continue;
+      }
 
       var octave = 0;
       while (token.endsWith("'")) {
@@ -87,6 +107,7 @@ class SolfegeParser {
         syllable: token,
         chromaticOffset: offset,
         octave: octave,
+        lyric: lyric,
       ));
     }
 

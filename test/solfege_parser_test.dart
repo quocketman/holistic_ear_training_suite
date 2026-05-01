@@ -48,5 +48,43 @@ void main() {
       final r = SolfegeParser.parse('so sol');
       expect(r.notes.map((n) => n.chromaticOffset).toList(), [7, 7]);
     });
+
+    test('hyphen separates tokens like whitespace', () {
+      final r = SolfegeParser.parse('do-re-mi');
+      expect(r.unrecognized, isEmpty);
+      expect(r.notes.map((n) => n.syllable).toList(), ['do', 're', 'mi']);
+    });
+
+    test('/lyric attaches lyric to syllable verbatim', () {
+      final r = SolfegeParser.parse('do/Twin re/kle mi/Lit-tle');
+      expect(r.notes.length, 3);
+      expect(r.notes[0].lyric, 'Twin');
+      expect(r.notes[1].lyric, 'kle');
+      // Hyphen is a separator, so "Lit-tle" splits the second token off.
+      expect(r.notes[2].lyric, 'Lit');
+      expect(r.unrecognized, ['tle']);
+    });
+
+    test('lyric works with octave markers', () {
+      final r = SolfegeParser.parse("do'/high do,/low");
+      expect(r.notes.length, 2);
+      expect(r.notes[0].octave, 1);
+      expect(r.notes[0].lyric, 'high');
+      expect(r.notes[1].octave, -1);
+      expect(r.notes[1].lyric, 'low');
+    });
+
+    test('empty lyric after slash leaves lyric null', () {
+      final r = SolfegeParser.parse('do/ re');
+      expect(r.notes.length, 2);
+      expect(r.notes[0].lyric, isNull);
+      expect(r.notes[1].lyric, isNull);
+    });
+
+    test('lyric preserves remaining slashes', () {
+      final r = SolfegeParser.parse('do/foo/bar');
+      expect(r.notes.length, 1);
+      expect(r.notes[0].lyric, 'foo/bar');
+    });
   });
 }

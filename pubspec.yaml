@@ -26,6 +26,9 @@ dependencies:
   
   # SVG support for ToneToken graphics
   flutter_svg: ^2.0.9
+
+  # Google Fonts (Source Sans 3 / "Source Sans Pro" for sequence lyrics)
+  google_fonts: ^6.1.0
   
   # UI components
   cupertino_icons: ^1.0.6

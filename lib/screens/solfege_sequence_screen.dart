@@ -145,9 +145,9 @@ class _SolfegeSequenceScreenState extends State<SolfegeSequenceScreen> {
                   decoration: const InputDecoration(
                     border: OutlineInputBorder(),
                     labelText: 'Solfège sequence',
-                    hintText: "e.g. do re mi fa sol la ti do'",
+                    hintText: "e.g. do/Twin do/kle so/Twin so/kle",
                     helperText:
-                        "Suffix ' for octave up, , for octave down (do' do,)",
+                        "Space or - between notes • ' / , for octave • /lyric attaches a lyric",
                   ),
                   textInputAction: TextInputAction.done,
                 ),
