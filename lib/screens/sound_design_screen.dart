@@ -8,6 +8,7 @@ import '../widgets/tone_token.dart';
 import '../widgets/rotary_knob.dart';
 import '../widgets/parameter_slider.dart';
 import '../widgets/oscillator_switch.dart';
+import '../widgets/key_octave_controls.dart';
 import '../services/audio_service.dart';
 
 /// Sound Design screen with ToneToken keyboard and synth controls
@@ -43,6 +44,70 @@ class _SoundDesignScreenState extends State<SoundDesignScreen> {
     NoteNugget(scaleDegree: 7, chromaticAlteration: 0),
   ];
 
+  // GlobalKeys for finding each token's screen bounds (drag-to-play hit-test).
+  late final Map<NoteNugget, GlobalKey> _tokenKeys = {
+    for (final n in _chromaticScale) n: GlobalKey(),
+  };
+
+  // Currently pressed note (drives glowing visual + audio).
+  NoteNugget? _pressedNugget;
+  bool _pointerDown = false;
+
+  /// Find the token under a global pointer position.
+  NoteNugget? _hitTest(Offset globalPos) {
+    for (final entry in _tokenKeys.entries) {
+      final ctx = entry.value.currentContext;
+      if (ctx == null) continue;
+      final box = ctx.findRenderObject() as RenderBox?;
+      if (box == null || !box.hasSize) continue;
+      final topLeft = box.localToGlobal(Offset.zero);
+      final rect = topLeft & box.size;
+      if (rect.contains(globalPos)) return entry.key;
+    }
+    return null;
+  }
+
+  void _setPressed(NoteNugget? newNugget) {
+    if (newNugget == _pressedNugget) return;
+    if (_pressedNugget != null) {
+      _onNoteOff(_pressedNugget!);
+    }
+    if (newNugget != null && _pointerDown) {
+      _onNoteOn(newNugget);
+    }
+    setState(() => _pressedNugget = newNugget);
+  }
+
+  void _onPointerDown(PointerDownEvent e) {
+    _pointerDown = true;
+    final hit = _hitTest(e.position);
+    if (hit != null) {
+      _onNoteOn(hit);
+      setState(() => _pressedNugget = hit);
+    }
+  }
+
+  void _onPointerMove(PointerMoveEvent e) {
+    if (!_pointerDown) return;
+    _setPressed(_hitTest(e.position));
+  }
+
+  void _onPointerUp(PointerUpEvent e) {
+    _pointerDown = false;
+    if (_pressedNugget != null) {
+      _onNoteOff(_pressedNugget!);
+    }
+    setState(() => _pressedNugget = null);
+  }
+
+  void _onPointerCancel(PointerCancelEvent e) {
+    _pointerDown = false;
+    if (_pressedNugget != null) {
+      _onNoteOff(_pressedNugget!);
+    }
+    setState(() => _pressedNugget = null);
+  }
+
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider.value(
@@ -59,15 +124,32 @@ class _SoundDesignScreenState extends State<SoundDesignScreen> {
             ),
           ],
         ),
-        body: LayoutBuilder(
-          builder: (context, constraints) {
-            // Use horizontal layout on wide screens
-            if (constraints.maxWidth > 700) {
-              return _buildWideLayout();
-            } else {
-              return _buildNarrowLayout();
-            }
-          },
+        body: Column(
+          children: [
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                border: Border(
+                  bottom: BorderSide(color: Colors.grey.shade300),
+                ),
+              ),
+              child: const KeyOctaveControls(),
+            ),
+            Expanded(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  // Use horizontal layout on wide screens
+                  if (constraints.maxWidth > 700) {
+                    return _buildWideLayout();
+                  } else {
+                    return _buildNarrowLayout();
+                  }
+                },
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -127,60 +209,65 @@ class _SoundDesignScreenState extends State<SoundDesignScreen> {
     const tokenSize = 70.0;
     const verticalOffset = (tokenSize + 2) / 2;
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            // Left column
-            Column(
-              children: _chromaticScale
-                  .asMap()
-                  .entries
-                  .where((entry) => entry.key % 2 == 0)
-                  .toList()
-                  .reversed
-                  .map((entry) => Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 1.0),
-                        child: ToneToken(
-                          noteNugget: entry.value,
-                          size: tokenSize,
-                          orientation: HexagonOrientation.flatTop,
-                          onTapDown: () => _onNoteOn(entry.value),
-                          onTapUp: () => _onNoteOff(entry.value),
-                        ),
-                      ))
-                  .toList(),
-            ),
-            const SizedBox(width: 1),
-            // Right column (offset)
-            Padding(
-              padding: const EdgeInsets.only(bottom: verticalOffset),
-              child: Column(
+    Widget buildTile(NoteNugget nugget) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 1.0),
+        child: IgnorePointer(
+          // Pointer events are handled by the Listener wrapper below.
+          child: ToneToken(
+            key: _tokenKeys[nugget],
+            noteNugget: nugget,
+            size: tokenSize,
+            orientation: HexagonOrientation.flatTop,
+            glowing: nugget == _pressedNugget,
+          ),
+        ),
+      );
+    }
+
+    return Listener(
+      behavior: HitTestBehavior.opaque,
+      onPointerDown: _onPointerDown,
+      onPointerMove: _onPointerMove,
+      onPointerUp: _onPointerUp,
+      onPointerCancel: _onPointerCancel,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              // Left column
+              Column(
                 children: _chromaticScale
                     .asMap()
                     .entries
-                    .where((entry) => entry.key % 2 == 1)
+                    .where((entry) => entry.key % 2 == 0)
                     .toList()
                     .reversed
-                    .map((entry) => Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 1.0),
-                          child: ToneToken(
-                            noteNugget: entry.value,
-                            size: tokenSize,
-                            orientation: HexagonOrientation.flatTop,
-                            onTapDown: () => _onNoteOn(entry.value),
-                            onTapUp: () => _onNoteOff(entry.value),
-                          ),
-                        ))
+                    .map((entry) => buildTile(entry.value))
                     .toList(),
               ),
-            ),
-          ],
-        ),
-      ],
+              const SizedBox(width: 1),
+              // Right column (offset)
+              Padding(
+                padding: const EdgeInsets.only(bottom: verticalOffset),
+                child: Column(
+                  children: _chromaticScale
+                      .asMap()
+                      .entries
+                      .where((entry) => entry.key % 2 == 1)
+                      .toList()
+                      .reversed
+                      .map((entry) => buildTile(entry.value))
+                      .toList(),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 

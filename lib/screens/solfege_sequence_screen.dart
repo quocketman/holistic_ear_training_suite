@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import '../models/musical_state.dart';
+import '../services/audio_service.dart';
 import '../services/png_export.dart';
 import '../utils/solfege_parser.dart';
+import '../widgets/key_octave_controls.dart';
 import '../widgets/solfege_sequence_canvas.dart';
 
 class SolfegeSequenceScreen extends StatefulWidget {
@@ -12,9 +16,17 @@ class SolfegeSequenceScreen extends StatefulWidget {
 }
 
 class _SolfegeSequenceScreenState extends State<SolfegeSequenceScreen> {
-  final _controller = TextEditingController();
-  final _titleController = TextEditingController();
+  // Persistent state across page navigation.
+  static String _persistedSolfege = '';
+  static String _persistedTitle = '';
+  static CanvasLayout? _persistedLayoutOverride;
+  static CanvasJustify _persistedJustify = CanvasJustify.left;
+
+  late final TextEditingController _controller;
+  late final TextEditingController _titleController;
   final _canvasKey = GlobalKey();
+  final AudioService _audioService = AudioService();
+  final Map<int, NoteHandle> _activeNotes = {};
 
   SolfegeParseResult _parsed = const SolfegeParseResult(
     notes: [],
@@ -25,10 +37,57 @@ class _SolfegeSequenceScreenState extends State<SolfegeSequenceScreen> {
   bool _exporting = false;
 
   @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: _persistedSolfege);
+    _titleController = TextEditingController(text: _persistedTitle);
+    _layoutOverride = _persistedLayoutOverride;
+    _justify = _persistedJustify;
+    if (_persistedSolfege.isNotEmpty) {
+      _parsed = SolfegeParser.parse(_persistedSolfege);
+    }
+  }
+
+  @override
   void dispose() {
+    // Save state for next visit before tearing down controllers.
+    _persistedSolfege = _controller.text;
+    _persistedTitle = _titleController.text;
+    _persistedLayoutOverride = _layoutOverride;
+    _persistedJustify = _justify;
+    for (final h in _activeNotes.values) {
+      h.release();
+    }
+    _activeNotes.clear();
+    _audioService.dispose();
     _controller.dispose();
     _titleController.dispose();
     super.dispose();
+  }
+
+  int _midiForNote(SolfegeNote note, int tonic) =>
+      tonic + note.chromaticOffset + note.octave * 12;
+
+  Future<void> _onNoteDown(int index) async {
+    if (index < 0 || index >= _parsed.notes.length) return;
+    final note = _parsed.notes[index];
+    if (note.isSpacer) return;
+    final tonic = context.read<MusicalState>().currentTonic;
+    final midi = _midiForNote(note, tonic);
+    if (midi < 0 || midi > 127) return;
+    final handle = await _audioService.noteOn(
+      midi,
+      params: AudioService.globalSynthParams,
+    );
+    if (handle != null) {
+      _activeNotes[index]?.release();
+      _activeNotes[index] = handle;
+    }
+  }
+
+  void _onNoteUp(int index) {
+    final handle = _activeNotes.remove(index);
+    handle?.release();
   }
 
   void _onInputChanged(String value) {
@@ -74,6 +133,8 @@ class _SolfegeSequenceScreenState extends State<SolfegeSequenceScreen> {
   void _clear() {
     _controller.clear();
     _titleController.clear();
+    _persistedSolfege = '';
+    _persistedTitle = '';
     setState(() {
       _parsed = const SolfegeParseResult(notes: [], unrecognized: []);
     });
@@ -172,12 +233,14 @@ class _SolfegeSequenceScreenState extends State<SolfegeSequenceScreen> {
                   decoration: const InputDecoration(
                     border: OutlineInputBorder(),
                     labelText: 'Solfège sequence',
-                    hintText: "e.g. do re mi fa sol la ti do'",
+                    hintText: "e.g. do/Twin do/kle so/Twin so/kle",
                     helperText:
-                        "Suffix ' for octave up, , for octave down (do' do,)",
+                        "Space or - between notes • ' / , for octave • /lyric attaches a lyric • _ for spacer",
                   ),
                   textInputAction: TextInputAction.done,
                 ),
+                const SizedBox(height: 8),
+                const KeyOctaveControls(),
                 if (_parsed.unrecognized.isNotEmpty || _statusLine().isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(top: 4),
@@ -206,6 +269,8 @@ class _SolfegeSequenceScreenState extends State<SolfegeSequenceScreen> {
                     fitToSize: Size(constraints.maxWidth - 24, constraints.maxHeight - 24),
                     title: _titleController.text.trim(),
                     justify: _justify,
+                    onNoteDown: _onNoteDown,
+                    onNoteUp: _onNoteUp,
                   ),
                 );
               },
