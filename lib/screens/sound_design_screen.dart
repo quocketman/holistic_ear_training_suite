@@ -8,6 +8,7 @@ import '../widgets/tone_token.dart';
 import '../widgets/rotary_knob.dart';
 import '../widgets/parameter_slider.dart';
 import '../widgets/oscillator_switch.dart';
+import '../widgets/key_octave_controls.dart';
 import '../services/audio_service.dart';
 
 /// Sound Design screen with ToneToken keyboard and synth controls
@@ -59,15 +60,32 @@ class _SoundDesignScreenState extends State<SoundDesignScreen> {
             ),
           ],
         ),
-        body: LayoutBuilder(
-          builder: (context, constraints) {
-            // Use horizontal layout on wide screens
-            if (constraints.maxWidth > 700) {
-              return _buildWideLayout();
-            } else {
-              return _buildNarrowLayout();
-            }
-          },
+        body: Column(
+          children: [
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                border: Border(
+                  bottom: BorderSide(color: Colors.grey.shade300),
+                ),
+              ),
+              child: const KeyOctaveControls(),
+            ),
+            Expanded(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  // Use horizontal layout on wide screens
+                  if (constraints.maxWidth > 700) {
+                    return _buildWideLayout();
+                  } else {
+                    return _buildNarrowLayout();
+                  }
+                },
+              ),
+            ),
+          ],
         ),
       ),
     );
