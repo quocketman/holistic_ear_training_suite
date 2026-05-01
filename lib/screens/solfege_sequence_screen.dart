@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -19,7 +20,6 @@ class _SolfegeSequenceScreenState extends State<SolfegeSequenceScreen> {
   // Persistent state across page navigation.
   static String _persistedSolfege = '';
   static String _persistedTitle = '';
-  static CanvasLayout? _persistedLayoutOverride;
   static CanvasJustify _persistedJustify = CanvasJustify.left;
 
   late final TextEditingController _controller;
@@ -32,7 +32,6 @@ class _SolfegeSequenceScreenState extends State<SolfegeSequenceScreen> {
     notes: [],
     unrecognized: [],
   );
-  CanvasLayout? _layoutOverride;
   CanvasJustify _justify = CanvasJustify.left;
   bool _exporting = false;
 
@@ -41,7 +40,6 @@ class _SolfegeSequenceScreenState extends State<SolfegeSequenceScreen> {
     super.initState();
     _controller = TextEditingController(text: _persistedSolfege);
     _titleController = TextEditingController(text: _persistedTitle);
-    _layoutOverride = _persistedLayoutOverride;
     _justify = _persistedJustify;
     if (_persistedSolfege.isNotEmpty) {
       _parsed = SolfegeParser.parse(_persistedSolfege);
@@ -53,7 +51,6 @@ class _SolfegeSequenceScreenState extends State<SolfegeSequenceScreen> {
     // Save state for next visit before tearing down controllers.
     _persistedSolfege = _controller.text;
     _persistedTitle = _titleController.text;
-    _persistedLayoutOverride = _layoutOverride;
     _persistedJustify = _justify;
     for (final h in _activeNotes.values) {
       h.release();
@@ -96,11 +93,21 @@ class _SolfegeSequenceScreenState extends State<SolfegeSequenceScreen> {
     });
   }
 
+  /// True only on iOS / Android. Desktop and web are always horizontal.
+  bool get _isMobile =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.iOS ||
+          defaultTargetPlatform == TargetPlatform.android);
+
   CanvasLayout _resolvedLayout(BuildContext context) {
-    if (_layoutOverride != null) return _layoutOverride!;
-    return MediaQuery.of(context).orientation == Orientation.portrait
-        ? CanvasLayout.vertical
-        : CanvasLayout.horizontal;
+    if (_isMobile) {
+      // Mobile follows device orientation.
+      return MediaQuery.of(context).orientation == Orientation.portrait
+          ? CanvasLayout.vertical
+          : CanvasLayout.horizontal;
+    }
+    // Desktop and web: always horizontal.
+    return CanvasLayout.horizontal;
   }
 
   Future<void> _print() async {
@@ -168,26 +175,6 @@ class _SolfegeSequenceScreenState extends State<SolfegeSequenceScreen> {
             color: _justify == CanvasJustify.right ? Colors.white : Colors.white38,
             tooltip: 'Right',
             onPressed: () => setState(() => _justify = CanvasJustify.right),
-          ),
-          const SizedBox(width: 8),
-          PopupMenuButton<CanvasLayout?>(
-            icon: const Icon(Icons.aspect_ratio),
-            tooltip: 'Canvas layout',
-            onSelected: (v) => setState(() => _layoutOverride = v),
-            itemBuilder: (_) => [
-              const PopupMenuItem(
-                value: null,
-                child: Text('Auto (follows orientation)'),
-              ),
-              const PopupMenuItem(
-                value: CanvasLayout.horizontal,
-                child: Text('Horizontal 1920×1080'),
-              ),
-              const PopupMenuItem(
-                value: CanvasLayout.vertical,
-                child: Text('Vertical 1080×1920'),
-              ),
-            ],
           ),
           const SizedBox(width: 8),
           IconButton(

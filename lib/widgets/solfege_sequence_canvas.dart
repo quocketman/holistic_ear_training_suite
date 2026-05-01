@@ -207,12 +207,25 @@ class _SolfegeSequenceCanvasState extends State<SolfegeSequenceCanvas> {
 
     final tokens = <Widget>[];
     final lyrics = <Widget>[];
+    final isVertical = widget.layout == CanvasLayout.vertical;
 
     for (var i = 0; i < widget.notes.length; i++) {
       final n = widget.notes[i];
       if (n.isSpacer) continue;
       final p = positions[i];
       final isActive = _interactive && i == _activeIndex;
+
+      Widget tokenContent = SolfegeHexToken(
+        label: n.syllable,
+        chromaticOffset: n.chromaticOffset,
+        size: ts,
+      );
+      // In vertical mode, rotate the tile 90° clockwise so the hex shape
+      // and label rotate together with the layout.
+      if (isVertical) {
+        tokenContent =
+            RotatedBox(quarterTurns: 1, child: tokenContent);
+      }
 
       tokens.add(Positioned(
         left: p.dx - ts / 2,
@@ -227,24 +240,33 @@ class _SolfegeSequenceCanvasState extends State<SolfegeSequenceCanvas> {
             scale: isActive ? 1.15 : 1.0,
             duration: const Duration(milliseconds: 120),
             curve: Curves.easeOut,
-            child: SolfegeHexToken(
-              label: n.syllable,
-              chromaticOffset: n.chromaticOffset,
-              size: ts,
-            ),
+            child: tokenContent,
           ),
         ),
       ));
 
       final lyric = n.lyric;
       if (lyric != null && lyric.isNotEmpty) {
-        lyrics.add(Positioned(
-          left: p.dx - ts / 2,
-          top: p.dy + ts / 2 + 2,
-          child: IgnorePointer(
-            child: Text(lyric, style: lyricStyle, textAlign: TextAlign.left),
-          ),
-        ));
+        Widget lyricWidget =
+            Text(lyric, style: lyricStyle, textAlign: TextAlign.left);
+        if (isVertical) {
+          // Rotate lyric 90° clockwise to match rotated tiles. Position it
+          // to the right of the tile instead of below.
+          lyrics.add(Positioned(
+            left: p.dx + ts / 2 + 2,
+            top: p.dy - ts / 2,
+            child: IgnorePointer(
+              child:
+                  RotatedBox(quarterTurns: 1, child: lyricWidget),
+            ),
+          ));
+        } else {
+          lyrics.add(Positioned(
+            left: p.dx - ts / 2,
+            top: p.dy + ts / 2 + 2,
+            child: IgnorePointer(child: lyricWidget),
+          ));
+        }
       }
     }
     // Render lyrics after tokens so they appear above any token edge.
