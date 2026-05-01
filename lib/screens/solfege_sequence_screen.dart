@@ -201,9 +201,12 @@ class _SolfegeSequenceScreenState extends State<SolfegeSequenceScreen> {
           ),
         ],
       ),
-      body: Column(
+      body: Stack(
+        clipBehavior: Clip.hardEdge,
         children: [
-          Padding(
+          Column(
+            children: [
+              Padding(
             padding: const EdgeInsets.all(12),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -267,24 +270,23 @@ class _SolfegeSequenceScreenState extends State<SolfegeSequenceScreen> {
               },
             ),
           ),
-          // Full-res canvas for PNG export — hidden but still laid out.
-          ClipRect(
-            child: Align(
-              alignment: Alignment.topLeft,
-              heightFactor: 0.001,
-              widthFactor: 0.001,
-              child: RepaintBoundary(
-                key: _canvasKey,
-                child: SizedBox(
-                  width: canvasSize.width,
-                  height: canvasSize.height,
-                  child: SolfegeSequenceCanvas(
-                    notes: _parsed.notes,
-                    layout: layout,
-                    title: _titleController.text.trim(),
-                    justify: _justify,
-                  ),
-                ),
+            ],
+          ),
+          // Full-res canvas for PNG export — positioned off-screen so it
+          // lays out at full intrinsic size and gets fully painted, but is
+          // never visible. Stack's clipBehavior hides the overflow.
+          Positioned(
+            left: -canvasSize.width - 100,
+            top: -canvasSize.height - 100,
+            width: canvasSize.width,
+            height: canvasSize.height,
+            child: RepaintBoundary(
+              key: _canvasKey,
+              child: SolfegeSequenceCanvas(
+                notes: _parsed.notes,
+                layout: layout,
+                title: _titleController.text.trim(),
+                justify: _justify,
               ),
             ),
           ),
