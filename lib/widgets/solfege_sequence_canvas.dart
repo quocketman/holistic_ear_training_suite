@@ -209,6 +209,40 @@ class _SolfegeSequenceCanvasState extends State<SolfegeSequenceCanvas> {
     final lyrics = <Widget>[];
     final isVertical = widget.layout == CanvasLayout.vertical;
 
+    // Compute bounding rect for each group (covers tile centers, expanded
+    // by half a token to enclose them, plus a little extra padding).
+    final groupRects = <int, Rect>{};
+    for (var i = 0; i < widget.notes.length; i++) {
+      final gid = widget.notes[i].groupId;
+      if (gid == null) continue;
+      if (widget.notes[i].isSpacer) continue;
+      final p = positions[i];
+      final tileRect = Rect.fromCenter(center: p, width: ts, height: ts);
+      groupRects[gid] = groupRects.containsKey(gid)
+          ? groupRects[gid]!.expandToInclude(tileRect)
+          : tileRect;
+    }
+    final groupBackgrounds = <Widget>[];
+    final padding = ts * 0.18;
+    final radius = ts * 0.35;
+    for (final rect in groupRects.values) {
+      final padded = rect.inflate(padding);
+      groupBackgrounds.add(Positioned(
+        left: padded.left,
+        top: padded.top,
+        width: padded.width,
+        height: padded.height,
+        child: IgnorePointer(
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(radius),
+            ),
+          ),
+        ),
+      ));
+    }
+
     for (var i = 0; i < widget.notes.length; i++) {
       final n = widget.notes[i];
       if (n.isSpacer) continue;
@@ -269,8 +303,8 @@ class _SolfegeSequenceCanvasState extends State<SolfegeSequenceCanvas> {
         }
       }
     }
-    // Render lyrics after tokens so they appear above any token edge.
-    return [...tokens, ...lyrics];
+    // Group backgrounds first (behind tokens), then tokens, then lyrics on top.
+    return [...groupBackgrounds, ...tokens, ...lyrics];
   }
 
   /// Compute effective token size that fits everything in the content area.

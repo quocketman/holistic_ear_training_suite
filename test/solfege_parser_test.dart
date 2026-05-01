@@ -86,5 +86,44 @@ void main() {
       expect(r.notes.length, 1);
       expect(r.notes[0].lyric, 'foo/bar');
     });
+
+    test('standalone pipes group surrounded notes', () {
+      final r = SolfegeParser.parse('do | re mi fa | sol');
+      expect(r.notes.length, 5);
+      expect(r.notes[0].groupId, isNull); // do
+      expect(r.notes[1].groupId, isNotNull); // re
+      expect(r.notes[2].groupId, r.notes[1].groupId); // mi
+      expect(r.notes[3].groupId, r.notes[1].groupId); // fa
+      expect(r.notes[4].groupId, isNull); // sol
+    });
+
+    test('attached pipes group like standalone', () {
+      final r = SolfegeParser.parse('do |re mi fa| sol');
+      expect(r.notes.length, 5);
+      expect(r.notes[0].groupId, isNull);
+      expect(r.notes[1].groupId, isNotNull);
+      expect(r.notes[2].groupId, r.notes[1].groupId);
+      expect(r.notes[3].groupId, r.notes[1].groupId);
+      expect(r.notes[4].groupId, isNull);
+    });
+
+    test('multiple groups have distinct ids', () {
+      final r = SolfegeParser.parse('|do re| |mi fa|');
+      expect(r.notes.length, 4);
+      expect(r.notes[0].groupId, isNotNull);
+      expect(r.notes[1].groupId, r.notes[0].groupId);
+      expect(r.notes[2].groupId, isNotNull);
+      expect(r.notes[2].groupId, isNot(r.notes[0].groupId));
+      expect(r.notes[3].groupId, r.notes[2].groupId);
+    });
+
+    test('groups work with lyrics', () {
+      final r = SolfegeParser.parse('|do/twin re/kle|');
+      expect(r.notes.length, 2);
+      expect(r.notes[0].lyric, 'twin');
+      expect(r.notes[1].lyric, 'kle');
+      expect(r.notes[0].groupId, isNotNull);
+      expect(r.notes[0].groupId, r.notes[1].groupId);
+    });
   });
 }

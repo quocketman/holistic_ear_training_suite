@@ -129,9 +129,13 @@ class _SolfegeSequenceScreenState extends State<SolfegeSequenceScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Export failed: $e')),
-      );
+      // Quietly ignore user-cancelled save dialogs.
+      final msg = e.toString();
+      if (!msg.contains('Save cancelled')) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Export failed: $e')),
+        );
+      }
     } finally {
       if (mounted) setState(() => _exporting = false);
     }

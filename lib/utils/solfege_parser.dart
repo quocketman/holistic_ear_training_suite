@@ -11,6 +11,11 @@
 ///   - Solfège portion is case-insensitive
 ///   - Underscore (`_`) inserts a blank spacer the width of a hex.
 ///     Multiple underscores create wider gaps (e.g. `___`).
+///   - Pipe (`|`) groups notes for visual clustering. May be a standalone
+///     token or attached to a syllable. Examples:
+///       `do | re mi fa | sol`     → re, mi, fa grouped
+///       `do |re mi fa| sol`       → same as above
+///       `|do re| |mi fa|`         → two separate groups
 ///
 /// Recognised chromatic syllables (offset 0–11):
 ///   do(0) di/ra(1) re(2) ri/me(3) mi(4) fa(5) fi/se(6)
@@ -24,12 +29,17 @@ class SolfegeNote {
   /// A spacer takes up horizontal space but renders no token.
   final bool isSpacer;
 
+  /// Optional group identifier — notes with the same id render with a faint
+  /// rounded background underneath, visually clustering them.
+  final int? groupId;
+
   const SolfegeNote({
     required this.syllable,
     required this.chromaticOffset,
     required this.octave,
     this.lyric,
     this.isSpacer = false,
+    this.groupId,
   });
 
   /// Total chromatic position from base do (octave 0, offset 0).
@@ -37,7 +47,9 @@ class SolfegeNote {
 
   @override
   String toString() =>
-      '$syllable(off=$chromaticOffset, oct=$octave${lyric == null ? '' : ', lyric=$lyric'})';
+      '$syllable(off=$chromaticOffset, oct=$octave'
+      '${lyric == null ? '' : ', lyric=$lyric'}'
+      '${groupId == null ? '' : ', group=$groupId'})';
 }
 
 class SolfegeParseResult {
@@ -77,33 +89,70 @@ class SolfegeParser {
 
     final tokens = input.split(RegExp(r'[\s\-]+')).where((t) => t.isNotEmpty);
 
+    int? currentGroup;
+    int nextGroupId = 0;
+
     for (final raw in tokens) {
-      // Underscores = spacers (one per underscore character).
-      if (RegExp(r'^_+$').hasMatch(raw)) {
+      // Standalone pipe(s): each `|` toggles group state.
+      if (RegExp(r'^\|+$').hasMatch(raw)) {
         for (var i = 0; i < raw.length; i++) {
-          notes.add(const SolfegeNote(
-            syllable: '_',
-            chromaticOffset: 0,
-            octave: 0,
-            isSpacer: true,
-          ));
+          if (currentGroup == null) {
+            currentGroup = nextGroupId++;
+          } else {
+            currentGroup = null;
+          }
         }
         continue;
       }
 
+      // Strip leading/trailing pipes from the token. A leading pipe opens a
+      // new group; a trailing pipe closes the current group after this note.
+      var working = raw;
+      var openBefore = false;
+      var closeAfter = false;
+      while (working.startsWith('|')) {
+        openBefore = !openBefore;
+        working = working.substring(1);
+      }
+      while (working.endsWith('|')) {
+        closeAfter = !closeAfter;
+        working = working.substring(0, working.length - 1);
+      }
+
+      if (openBefore) {
+        // Close any existing group, then open a fresh one.
+        currentGroup = nextGroupId++;
+      }
+
+      // Underscores = spacers (one per underscore character).
+      if (RegExp(r'^_+$').hasMatch(working)) {
+        for (var i = 0; i < working.length; i++) {
+          notes.add(SolfegeNote(
+            syllable: '_',
+            chromaticOffset: 0,
+            octave: 0,
+            isSpacer: true,
+            groupId: currentGroup,
+          ));
+        }
+        if (closeAfter) currentGroup = null;
+        continue;
+      }
+
       // Split off optional lyric (everything after the first '/').
-      String solfPart = raw;
+      String solfPart = working;
       String? lyric;
-      final slash = raw.indexOf('/');
+      final slash = working.indexOf('/');
       if (slash >= 0) {
-        solfPart = raw.substring(0, slash);
-        final rest = raw.substring(slash + 1);
+        solfPart = working.substring(0, slash);
+        final rest = working.substring(slash + 1);
         if (rest.isNotEmpty) lyric = rest;
       }
 
       var token = solfPart.toLowerCase().trim();
       if (token.isEmpty) {
         unrecognized.add(raw);
+        if (closeAfter) currentGroup = null;
         continue;
       }
 
@@ -120,6 +169,7 @@ class SolfegeParser {
       final offset = _syllableMap[token];
       if (offset == null) {
         unrecognized.add(raw);
+        if (closeAfter) currentGroup = null;
         continue;
       }
       notes.add(SolfegeNote(
@@ -127,7 +177,10 @@ class SolfegeParser {
         chromaticOffset: offset,
         octave: octave,
         lyric: lyric,
+        groupId: currentGroup,
       ));
+
+      if (closeAfter) currentGroup = null;
     }
 
     return SolfegeParseResult(notes: notes, unrecognized: unrecognized);
