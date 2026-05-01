@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import '../models/enums.dart';
+import '../models/musical_state.dart';
+import '../services/audio_service.dart';
 import '../services/png_export.dart';
 import '../utils/solfege_parser.dart';
 import '../widgets/solfege_sequence_canvas.dart';
@@ -14,6 +18,8 @@ class SolfegeSequenceScreen extends StatefulWidget {
 class _SolfegeSequenceScreenState extends State<SolfegeSequenceScreen> {
   final _controller = TextEditingController();
   final _canvasKey = GlobalKey();
+  final AudioService _audioService = AudioService();
+  final Map<int, NoteHandle> _activeNotes = {};
 
   SolfegeParseResult _parsed = const SolfegeParseResult(
     notes: [],
@@ -24,8 +30,50 @@ class _SolfegeSequenceScreenState extends State<SolfegeSequenceScreen> {
 
   @override
   void dispose() {
+    for (final h in _activeNotes.values) {
+      h.release();
+    }
+    _activeNotes.clear();
+    _audioService.dispose();
     _controller.dispose();
     super.dispose();
+  }
+
+  int _midiForNote(SolfegeNote note, int tonic) =>
+      tonic + note.chromaticOffset + note.octave * 12;
+
+  Future<void> _onNoteDown(int index) async {
+    if (index < 0 || index >= _parsed.notes.length) return;
+    final tonic = context.read<MusicalState>().currentTonic;
+    final midi = _midiForNote(_parsed.notes[index], tonic);
+    if (midi < 0 || midi > 127) return;
+    final handle = await _audioService.noteOn(
+      midi,
+      params: AudioService.globalSynthParams,
+    );
+    if (handle != null) {
+      _activeNotes[index]?.release();
+      _activeNotes[index] = handle;
+    }
+  }
+
+  void _onNoteUp(int index) {
+    final handle = _activeNotes.remove(index);
+    handle?.release();
+  }
+
+  void _setTonicPitchClass(PitchClass pc) {
+    final state = context.read<MusicalState>();
+    final currentOctave = (state.currentTonic ~/ 12) - 1;
+    final newTonic = pc.value + (currentOctave + 1) * 12;
+    state.currentTonic = newTonic.clamp(0, 127);
+  }
+
+  void _shiftOctave(int delta) {
+    final state = context.read<MusicalState>();
+    final next = state.currentTonic + delta * 12;
+    if (next < 0 || next > 127) return;
+    state.currentTonic = next;
   }
 
   void _onInputChanged(String value) {
@@ -118,31 +166,15 @@ class _SolfegeSequenceScreenState extends State<SolfegeSequenceScreen> {
                   textInputAction: TextInputAction.done,
                 ),
                 const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        _statusLine(),
-                        style: TextStyle(
-                          color: _parsed.unrecognized.isNotEmpty
-                              ? Colors.redAccent
-                              : Colors.grey[400],
-                        ),
-                      ),
-                    ),
-                    FilledButton.icon(
-                      onPressed:
-                          _parsed.notes.isEmpty || _exporting ? null : _print,
-                      icon: _exporting
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.print),
-                      label: const Text('Print PNG'),
-                    ),
-                  ],
+                _buildControlsRow(),
+                const SizedBox(height: 4),
+                Text(
+                  _statusLine(),
+                  style: TextStyle(
+                    color: _parsed.unrecognized.isNotEmpty
+                        ? Colors.redAccent
+                        : Colors.grey[400],
+                  ),
                 ),
               ],
             ),
@@ -159,6 +191,8 @@ class _SolfegeSequenceScreenState extends State<SolfegeSequenceScreen> {
                     child: SolfegeSequenceCanvas(
                       notes: _parsed.notes,
                       layout: layout,
+                      onNoteDown: _onNoteDown,
+                      onNoteUp: _onNoteUp,
                     ),
                   ),
                 ),
@@ -167,6 +201,87 @@ class _SolfegeSequenceScreenState extends State<SolfegeSequenceScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildControlsRow() {
+    return Consumer<MusicalState>(
+      builder: (context, state, _) {
+        final pc = state.currentTonicPitchClass;
+        final octave = (state.currentTonic ~/ 12) - 1;
+        return Wrap(
+          spacing: 12,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            _keyDropdown(pc),
+            _octaveStepper(octave),
+            FilledButton.icon(
+              onPressed:
+                  _parsed.notes.isEmpty || _exporting ? null : _print,
+              icon: _exporting
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.print),
+              label: const Text('Print PNG'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _keyDropdown(PitchClass pc) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Text('do = ', style: TextStyle(fontSize: 14)),
+        DropdownButton<PitchClass>(
+          value: pc,
+          underline: const SizedBox.shrink(),
+          items: PitchClass.values
+              .map((p) => DropdownMenuItem(
+                    value: p,
+                    child: Text(p.displayName),
+                  ))
+              .toList(),
+          onChanged: (v) {
+            if (v != null) _setTonicPitchClass(v);
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _octaveStepper(int octave) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Text('Oct ', style: TextStyle(fontSize: 14)),
+        IconButton(
+          tooltip: 'Octave down',
+          icon: const Icon(Icons.keyboard_arrow_down),
+          onPressed: () => _shiftOctave(-1),
+          visualDensity: VisualDensity.compact,
+        ),
+        SizedBox(
+          width: 24,
+          child: Text(
+            '$octave',
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 14),
+          ),
+        ),
+        IconButton(
+          tooltip: 'Octave up',
+          icon: const Icon(Icons.keyboard_arrow_up),
+          onPressed: () => _shiftOctave(1),
+          visualDensity: VisualDensity.compact,
+        ),
+      ],
     );
   }
 

@@ -22,12 +22,16 @@ class SolfegeSequenceCanvas extends StatelessWidget {
   final List<SolfegeNote> notes;
   final CanvasLayout layout;
   final double tokenSize;
+  final void Function(int index)? onNoteDown;
+  final void Function(int index)? onNoteUp;
 
   const SolfegeSequenceCanvas({
     super.key,
     required this.notes,
     required this.layout,
     this.tokenSize = 80.0,
+    this.onNoteDown,
+    this.onNoteUp,
   });
 
   @override
@@ -63,6 +67,8 @@ class SolfegeSequenceCanvas extends StatelessWidget {
           chromaticOffset: n.chromaticOffset,
           size: tokenSize,
           orientation: HexagonOrientation.pointyTop,
+          onTapDown: onNoteDown == null ? null : () => onNoteDown!(i),
+          onTapUp: onNoteUp == null ? null : () => onNoteUp!(i),
         ),
       ));
     }
