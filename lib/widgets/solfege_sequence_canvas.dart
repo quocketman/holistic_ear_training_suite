@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/enums.dart';
@@ -35,33 +37,43 @@ class SolfegeSequenceCanvas extends StatelessWidget {
     this.onNoteUp,
   });
 
+  static const double _lyricGap = 4.0;
+
   @override
   Widget build(BuildContext context) {
     final size = layout.pixelSize;
-
-    return Container(
-      width: size.width,
-      height: size.height,
-      color: Colors.black,
-      child: Stack(
-        children: _positionedTokens(size),
-      ),
-    );
-  }
-
-  List<Widget> _positionedTokens(Size canvas) {
-    if (notes.isEmpty) return const [];
-
-    final positions = _computePositions(canvas);
-
-    final tokens = <Widget>[];
-    final lyrics = <Widget>[];
     final lyricStyle = GoogleFonts.sourceSans3(
       fontSize: tokenSize * 0.22,
       fontWeight: FontWeight.w500,
       color: Colors.white,
       height: 1.0,
     );
+
+    return Container(
+      width: size.width,
+      height: size.height,
+      color: Colors.black,
+      child: Stack(
+        children: _positionedTokens(size, lyricStyle),
+      ),
+    );
+  }
+
+  double _measureLyricWidth(String text, TextStyle style) {
+    final tp = TextPainter(
+      text: TextSpan(text: text, style: style),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    return tp.width;
+  }
+
+  List<Widget> _positionedTokens(Size canvas, TextStyle lyricStyle) {
+    if (notes.isEmpty) return const [];
+
+    final positions = _computePositions(canvas, lyricStyle);
+
+    final tokens = <Widget>[];
+    final lyrics = <Widget>[];
 
     for (var i = 0; i < notes.length; i++) {
       final n = notes[i];
@@ -96,7 +108,7 @@ class SolfegeSequenceCanvas extends StatelessWidget {
     return [...tokens, ...lyrics];
   }
 
-  List<Offset> _computePositions(Size canvas) {
+  List<Offset> _computePositions(Size canvas, TextStyle lyricStyle) {
     final chromatics = notes.map((n) => n.totalChromatic).toList();
     final minC = chromatics.reduce((a, b) => a < b ? a : b);
     final maxC = chromatics.reduce((a, b) => a > b ? a : b);
@@ -109,15 +121,28 @@ class SolfegeSequenceCanvas extends StatelessWidget {
         ? canvas.height
         : canvas.width;
 
-    // Time axis: evenly distribute notes with tokenSize step, centered.
-    final timeSpan = (notes.length - 1) * tokenSize;
+    // Time axis: tokens normally step by tokenSize, but in horizontal mode
+    // a wide lyric on token i pushes token i+1 right by enough to clear it.
+    final timeOffsets = <double>[0.0];
+    for (var i = 1; i < notes.length; i++) {
+      final prev = notes[i - 1];
+      var step = tokenSize;
+      if (layout == CanvasLayout.horizontal &&
+          prev.lyric != null &&
+          prev.lyric!.isNotEmpty) {
+        final w = _measureLyricWidth(prev.lyric!, lyricStyle);
+        step = math.max(tokenSize, w + _lyricGap);
+      }
+      timeOffsets.add(timeOffsets.last + step);
+    }
+    final timeSpan = timeOffsets.last;
     final timeStart = (timeAxisLength - timeSpan) / 2;
 
     // Pitch axis: center the chromatic range.
     final pitchStart = (pitchAxisLength - pitchSpan) / 2;
 
     return List.generate(notes.length, (i) {
-      final timePos = timeStart + i * tokenSize;
+      final timePos = timeStart + timeOffsets[i];
       // Higher pitch should be visually higher (up in horizontal, right in
       // vertical). In screen coordinates, "up" = smaller y, "right" = larger x.
       final pitchOffsetFromMin = (chromatics[i] - minC) * tokenSize;
