@@ -7,16 +7,16 @@ import '../services/audio_service.dart';
 import '../services/png_export.dart';
 import '../utils/solfege_parser.dart';
 import '../widgets/key_octave_controls.dart';
-import '../widgets/solfege_sequence_canvas.dart';
+import '../widgets/whiteboard_canvas.dart';
 
-class SolfegeSequenceScreen extends StatefulWidget {
-  const SolfegeSequenceScreen({super.key});
+class WhiteboardScreen extends StatefulWidget {
+  const WhiteboardScreen({super.key});
 
   @override
-  State<SolfegeSequenceScreen> createState() => _SolfegeSequenceScreenState();
+  State<WhiteboardScreen> createState() => _WhiteboardScreenState();
 }
 
-class _SolfegeSequenceScreenState extends State<SolfegeSequenceScreen> {
+class _WhiteboardScreenState extends State<WhiteboardScreen> {
   // Persistent state across page navigation.
   static String _persistedSolfege = '';
   static String _persistedTitle = '';
@@ -118,7 +118,7 @@ class _SolfegeSequenceScreenState extends State<SolfegeSequenceScreen> {
       final title = _titleController.text.trim();
       final prefix = title.isNotEmpty
           ? title.replaceAll(RegExp(r'[^\w\s-]'), '').replaceAll(RegExp(r'\s+'), '_')
-          : 'solfege_sequence';
+          : 'whiteboard';
       final destination = await exportRepaintBoundaryToPng(
         boundaryKey: _canvasKey,
         filenamePrefix: prefix,
@@ -159,7 +159,7 @@ class _SolfegeSequenceScreenState extends State<SolfegeSequenceScreen> {
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        title: const Text('Solfège Sequence'),
+        title: const Text('Whiteboard'),
         actions: [
           // Justify buttons.
           IconButton(
@@ -256,7 +256,7 @@ class _SolfegeSequenceScreenState extends State<SolfegeSequenceScreen> {
             child: LayoutBuilder(
               builder: (context, constraints) {
                 return Center(
-                  child: SolfegeSequenceCanvas(
+                  child: WhiteboardCanvas(
                     notes: _parsed.notes,
                     layout: layout,
                     tokenSize: 50.0,
@@ -282,7 +282,7 @@ class _SolfegeSequenceScreenState extends State<SolfegeSequenceScreen> {
             height: canvasSize.height,
             child: RepaintBoundary(
               key: _canvasKey,
-              child: SolfegeSequenceCanvas(
+              child: WhiteboardCanvas(
                 notes: _parsed.notes,
                 layout: layout,
                 title: _titleController.text.trim(),

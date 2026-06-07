@@ -29,7 +29,7 @@ extension CanvasLayoutSize on CanvasLayout {
   }
 }
 
-class SolfegeSequenceCanvas extends StatefulWidget {
+class WhiteboardCanvas extends StatefulWidget {
   final List<SolfegeNote> notes;
   final CanvasLayout layout;
   final double tokenSize;
@@ -46,7 +46,7 @@ class SolfegeSequenceCanvas extends StatefulWidget {
   final void Function(int index)? onNoteDown;
   final void Function(int index)? onNoteUp;
 
-  const SolfegeSequenceCanvas({
+  const WhiteboardCanvas({
     super.key,
     required this.notes,
     required this.layout,
@@ -59,10 +59,10 @@ class SolfegeSequenceCanvas extends StatefulWidget {
   });
 
   @override
-  State<SolfegeSequenceCanvas> createState() => _SolfegeSequenceCanvasState();
+  State<WhiteboardCanvas> createState() => _WhiteboardCanvasState();
 }
 
-class _SolfegeSequenceCanvasState extends State<SolfegeSequenceCanvas> {
+class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
   static const double _lyricGap = 4.0;
 
   /// Index of the token currently under the active pointer (-1 = none).
