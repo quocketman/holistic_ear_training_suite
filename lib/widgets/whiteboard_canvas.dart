@@ -146,11 +146,30 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
 
   @override
   Widget build(BuildContext context) {
-    final size = widget.fitToSize ?? widget.layout.exportSize;
+    final viewport = widget.fitToSize ?? widget.layout.exportSize;
     final isPreview = widget.fitToSize != null;
     final titleFontSize = isPreview ? 20.0 : 48.0;
     final titleAreaHeight = isPreview ? 30.0 : widget.layout.titleHeight;
     final hasTitle = widget.title != null && widget.title!.isNotEmpty;
+
+    // In preview mode the canvas can extend beyond the viewport rightward —
+    // the parent SingleChildScrollView handles horizontal panning. Take the
+    // larger of (viewport width, natural content width) so when content fits,
+    // justify and centering still work; when it overflows, we grow naturally.
+    final Size size;
+    if (isPreview) {
+      final ts = _effectiveTokenSize(viewport, hasTitle ? titleAreaHeight : 0);
+      final lyricStyle = GoogleFonts.sourceSans3(
+        fontSize: ts * 0.45,
+        fontWeight: FontWeight.w500,
+        color: Colors.white,
+        height: 1.0,
+      );
+      final natural = _naturalContentWidth(ts, lyricStyle, true);
+      size = Size(math.max(viewport.width, natural), viewport.height);
+    } else {
+      size = viewport;
+    }
 
     final canvas = Container(
       width: size.width,
@@ -356,9 +375,14 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
             : canvas.width) -
         margin * 2;
 
-    final maxFromTime = widget.notes.isNotEmpty
-        ? timeAxisLength / widget.notes.length
-        : widget.tokenSize;
+    // In preview mode, the canvas can grow rightward inside a
+    // SingleChildScrollView, so don't shrink tokens to fit the time axis.
+    // In export mode (fixed-size PNG), keep the constraint.
+    final maxFromTime = isPreview
+        ? double.infinity
+        : widget.notes.isNotEmpty
+            ? timeAxisLength / widget.notes.length
+            : widget.tokenSize;
     // Decouple token size from chromatic spacing: positions step by one
     // chromaticUnit per semitone, tokens render at chromaticUnit × spread.
     // Solves for max tokenSize where:
@@ -413,6 +437,27 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
       // Both-null case is impossible: caller ensures pitchedIndices is non-empty.
     }
     return result;
+  }
+
+  /// Natural width of the content (margins + first/last half-token + the sum
+  /// of all time-step gaps). Used in preview mode to size the canvas so it
+  /// can extend rightward inside a SingleChildScrollView.
+  double _naturalContentWidth(double ts, TextStyle lyricStyle, bool isPreview) {
+    if (widget.notes.isEmpty) return 0;
+    final margin = isPreview ? 20.0 : 80.0;
+    double sumSteps = 0;
+    for (var i = 1; i < widget.notes.length; i++) {
+      final prev = widget.notes[i - 1];
+      var step = ts;
+      if (widget.layout == CanvasLayout.horizontal &&
+          prev.lyric != null &&
+          prev.lyric!.isNotEmpty) {
+        final w = _measureLyricWidth(prev.lyric!, lyricStyle);
+        step = math.max(ts, w + _lyricGap);
+      }
+      sumSteps += step;
+    }
+    return 2 * margin + ts + sumSteps;
   }
 
   double _measureLyricWidth(String text, TextStyle style) {

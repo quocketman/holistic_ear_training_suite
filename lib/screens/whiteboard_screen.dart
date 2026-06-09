@@ -27,6 +27,10 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
   final _canvasKey = GlobalKey();
   final AudioService _audioService = AudioService();
   final Map<int, NoteHandle> _activeNotes = {};
+  // Controls the horizontal scroll position of the canvas viewport. After
+  // each input change we jump to maxScrollExtent so the most recently typed
+  // tokens are always visible at the right edge.
+  final _canvasScrollController = ScrollController();
 
   SolfegeParseResult _parsed = const SolfegeParseResult(
     notes: [],
@@ -59,6 +63,7 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
     _audioService.dispose();
     _controller.dispose();
     _titleController.dispose();
+    _canvasScrollController.dispose();
     super.dispose();
   }
 
@@ -90,6 +95,13 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
   void _onInputChanged(String value) {
     setState(() {
       _parsed = SolfegeParser.parse(value);
+    });
+    // After the canvas relayouts with the new content, jump the viewport to
+    // the right edge so the user always sees what they just typed.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_canvasScrollController.hasClients) return;
+      final position = _canvasScrollController.position;
+      _canvasScrollController.jumpTo(position.maxScrollExtent);
     });
   }
 
@@ -231,7 +243,13 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
                     helperText:
                         "lyric/solfège  •  bare known syllables (do, re, …) → hex  •  bare other words → lyric only  •  trailing / forces lyric  •  ' , raise/lower octave  •  _ spacer  •  | … | groups",
                   ),
-                  textInputAction: TextInputAction.done,
+                  // Multi-line ergonomics: starts 3 lines tall, grows as the
+                  // user types more lines. Newlines are treated as whitespace
+                  // by the parser — they're for input organisation only.
+                  minLines: 3,
+                  maxLines: null,
+                  keyboardType: TextInputType.multiline,
+                  textInputAction: TextInputAction.newline,
                 ),
                 const SizedBox(height: 8),
                 const KeyOctaveControls(),
@@ -255,12 +273,17 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
-                return Center(
+                return SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  controller: _canvasScrollController,
                   child: WhiteboardCanvas(
                     notes: _parsed.notes,
                     layout: layout,
                     tokenSize: 50.0,
-                    fitToSize: Size(constraints.maxWidth - 24, constraints.maxHeight - 24),
+                    fitToSize: Size(
+                      constraints.maxWidth - 24,
+                      constraints.maxHeight - 24,
+                    ),
                     title: _titleController.text.trim(),
                     justify: _justify,
                     onNoteDown: _onNoteDown,
