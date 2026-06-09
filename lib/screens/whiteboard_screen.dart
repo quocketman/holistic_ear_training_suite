@@ -7,6 +7,7 @@ import '../services/audio_service.dart';
 import '../services/png_export.dart';
 import '../utils/solfege_parser.dart';
 import '../widgets/key_octave_controls.dart';
+import '../widgets/solfege_highlight_controller.dart';
 import '../widgets/whiteboard_canvas.dart';
 
 class WhiteboardScreen extends StatefulWidget {
@@ -22,7 +23,7 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
   static String _persistedTitle = '';
   static CanvasJustify _persistedJustify = CanvasJustify.left;
 
-  late final TextEditingController _controller;
+  late final SolfegeHighlightController _controller;
   late final TextEditingController _titleController;
   final _canvasKey = GlobalKey();
   final AudioService _audioService = AudioService();
@@ -42,7 +43,7 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
   @override
   void initState() {
     super.initState();
-    _controller = TextEditingController(text: _persistedSolfege);
+    _controller = SolfegeHighlightController(text: _persistedSolfege);
     _titleController = TextEditingController(text: _persistedTitle);
     _justify = _persistedJustify;
     if (_persistedSolfege.isNotEmpty) {
