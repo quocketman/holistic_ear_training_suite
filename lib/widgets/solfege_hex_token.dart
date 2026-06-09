@@ -109,16 +109,30 @@ class _SolfegeHexTokenState extends State<SolfegeHexToken>
               state: widget.state,
             ),
           ),
-          Opacity(
-            opacity: labelOpacity,
-            child: Text(
-              widget.label,
-              style: GoogleFonts.sourceSans3(
-                fontSize: widget.size * 0.30,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
+          // Label fills the hex's safe interior. FittedBox scales the
+          // text uniformly so 2-char syllables ("do") and 4-char compounds
+          // ("dira", "lesi") both occupy the same bounding box at the
+          // largest size that fits both width and height.
+          Center(
+            child: SizedBox(
+              width: widget.size * 0.78,
+              height: widget.size * 0.48,
+              child: Opacity(
+                opacity: labelOpacity,
+                child: FittedBox(
+                  fit: BoxFit.contain,
+                  child: Text(
+                    widget.label,
+                    style: GoogleFonts.sourceSans3(
+                      // Large base size — FittedBox scales it to fit.
+                      fontSize: 100,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                      height: 1.0,
+                    ),
+                  ),
+                ),
               ),
-              textAlign: TextAlign.center,
             ),
           ),
         ],
@@ -180,15 +194,16 @@ class _HexPainter extends CustomPainter {
       canvas.drawPath(path, Paint()..color = fillColor);
     }
 
-    // Stroke
+    // Stroke. Width scales with the hex size so borders stay visually
+    // balanced from 24-pixel mini-tokens up to 200-pixel canvas-fillers.
+    // Clamped at 0.6px on the low end to avoid sub-pixel aliasing artifacts.
+    final thickStroke = (size.width * 0.025).clamp(0.6, double.infinity);
+    final thinStroke = (size.width * 0.019).clamp(0.6, double.infinity);
     final (strokeColor, strokeWidth) = switch (state) {
-      SolfegeHexState.color => (Colors.white.withValues(alpha: 0.35), 1.5),
-      SolfegeHexState.dark || SolfegeHexState.glow => (color, 2.0),
-      SolfegeHexState.grey => (
-        const Color(0xFF555555),
-        1.5,
-      ),
-      SolfegeHexState.no => (color.withValues(alpha: 0.45), 1.5),
+      SolfegeHexState.color => (Colors.white.withValues(alpha: 0.35), thinStroke),
+      SolfegeHexState.dark || SolfegeHexState.glow => (color, thickStroke),
+      SolfegeHexState.grey => (const Color(0xFF555555), thinStroke),
+      SolfegeHexState.no => (color.withValues(alpha: 0.45), thinStroke),
     };
     canvas.drawPath(
       path,

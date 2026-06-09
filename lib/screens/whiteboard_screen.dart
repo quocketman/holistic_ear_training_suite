@@ -226,10 +226,10 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
                   onChanged: _onInputChanged,
                   decoration: const InputDecoration(
                     border: OutlineInputBorder(),
-                    labelText: 'Solfège sequence',
-                    hintText: "e.g. do/Twin do/kle so/Twin so/kle",
+                    labelText: 'Lyrics & solfège',
+                    hintText: "e.g. Twink-/do le/do twink-/so le/so lit-/la tle/la star/so",
                     helperText:
-                        "Space or - between notes • ' / , for octave • /lyric attaches a lyric • _ for spacer",
+                        "lyric/solfège  •  bare known syllables (do, re, …) → hex  •  bare other words → lyric only  •  trailing / forces lyric  •  ' , raise/lower octave  •  _ spacer  •  | … | groups",
                   ),
                   textInputAction: TextInputAction.done,
                 ),

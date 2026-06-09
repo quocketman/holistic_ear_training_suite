@@ -12,6 +12,15 @@ enum CanvasLayout {
 
 enum CanvasJustify { left, center, right }
 
+/// Ratio of token diameter to chromatic-semitone spacing on the pitch axis.
+/// - 1.0 = tokens just touch at adjacent chromatics (whole-step gap = 1 token
+///   diameter of empty space, looks puffy at wide ranges)
+/// - 1.5 = tokens overlap 33% at chromatic half-steps, whole-step gap shrinks
+///   to ~33% of a token diameter
+/// - 2.0 = whole-step tokens just touch, half-steps overlap 50%
+/// Increase for tighter visuals at wide pitch ranges.
+const double _chromaticSpread = 1.5;
+
 extension CanvasLayoutSize on CanvasLayout {
   /// Content area (excluding title).
   Size get contentSize => switch (this) {
@@ -193,7 +202,7 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
     final isPreview = widget.fitToSize != null;
     final ts = _effectiveTokenSize(canvas, titleOffset);
     final lyricStyle = GoogleFonts.sourceSans3(
-      fontSize: ts * 0.3,
+      fontSize: ts * 0.45,
       fontWeight: FontWeight.w500,
       color: Colors.white,
       height: 1.0,
@@ -249,35 +258,39 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
       final p = positions[i];
       final isActive = _interactive && i == _activeIndex;
 
-      Widget tokenContent = SolfegeHexToken(
-        label: n.syllable,
-        chromaticOffset: n.chromaticOffset,
-        size: ts,
-      );
-      // In vertical mode, rotate the tile 90° clockwise so the hex shape
-      // and label rotate together with the layout.
-      if (isVertical) {
-        tokenContent =
-            RotatedBox(quarterTurns: 1, child: tokenContent);
-      }
+      // Pitched notes get a hex token; lyric-only notes render just their
+      // lyric text at the same anchor.
+      if (!n.isLyricOnly) {
+        Widget tokenContent = SolfegeHexToken(
+          label: n.syllable,
+          chromaticOffset: n.chromaticOffset,
+          size: ts,
+        );
+        // In vertical mode, rotate the tile 90° clockwise so the hex shape
+        // and label rotate together with the layout.
+        if (isVertical) {
+          tokenContent =
+              RotatedBox(quarterTurns: 1, child: tokenContent);
+        }
 
-      tokens.add(Positioned(
-        left: p.dx - ts / 2,
-        top: p.dy - ts / 2,
-        width: ts,
-        height: ts,
-        child: IgnorePointer(
-          // Tokens should not consume pointer events when interactive —
-          // the canvas-level Listener handles everything.
-          ignoring: _interactive,
-          child: AnimatedScale(
-            scale: isActive ? 1.15 : 1.0,
-            duration: const Duration(milliseconds: 120),
-            curve: Curves.easeOut,
-            child: tokenContent,
+        tokens.add(Positioned(
+          left: p.dx - ts / 2,
+          top: p.dy - ts / 2,
+          width: ts,
+          height: ts,
+          child: IgnorePointer(
+            // Tokens should not consume pointer events when interactive —
+            // the canvas-level Listener handles everything.
+            ignoring: _interactive,
+            child: AnimatedScale(
+              scale: isActive ? 1.15 : 1.0,
+              duration: const Duration(milliseconds: 120),
+              curve: Curves.easeOut,
+              child: tokenContent,
+            ),
           ),
-        ),
-      ));
+        ));
+      }
 
       final lyric = n.lyric;
       if (lyric != null && lyric.isNotEmpty) {
@@ -285,20 +298,29 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
             Text(lyric, style: lyricStyle, textAlign: TextAlign.left);
         if (isVertical) {
           // Rotate lyric 90° clockwise to match rotated tiles. Position it
-          // to the right of the tile instead of below.
+          // to the right of the tile (or centered on p for lyric-only).
           lyrics.add(Positioned(
-            left: p.dx + ts / 2 + 2,
+            left: n.isLyricOnly ? p.dx : p.dx + ts / 2 + 2,
             top: p.dy - ts / 2,
-            child: IgnorePointer(
-              child:
-                  RotatedBox(quarterTurns: 1, child: lyricWidget),
+            child: FractionalTranslation(
+              translation: n.isLyricOnly
+                  ? const Offset(-0.5, 0)
+                  : Offset.zero,
+              child: IgnorePointer(
+                child: RotatedBox(quarterTurns: 1, child: lyricWidget),
+              ),
             ),
           ));
         } else {
+          // Pitched: lyric sits below the hex. Lyric-only: centered on the
+          // anchor point in both axes.
           lyrics.add(Positioned(
-            left: p.dx - ts / 2,
-            top: p.dy + ts / 2 + 2,
-            child: IgnorePointer(child: lyricWidget),
+            left: p.dx,
+            top: n.isLyricOnly ? p.dy : p.dy + ts / 2 + 2,
+            child: FractionalTranslation(
+              translation: Offset(-0.5, n.isLyricOnly ? -0.5 : 0),
+              child: IgnorePointer(child: lyricWidget),
+            ),
           ));
         }
       }
@@ -313,7 +335,8 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
 
     final realChromatics = [
       for (var i = 0; i < widget.notes.length; i++)
-        if (!widget.notes[i].isSpacer) widget.notes[i].totalChromatic,
+        if (!widget.notes[i].isSpacer && !widget.notes[i].isLyricOnly)
+          widget.notes[i].totalChromatic,
     ];
     if (realChromatics.isEmpty) return widget.tokenSize;
 
@@ -336,12 +359,60 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
     final maxFromTime = widget.notes.isNotEmpty
         ? timeAxisLength / widget.notes.length
         : widget.tokenSize;
+    // Decouple token size from chromatic spacing: positions step by one
+    // chromaticUnit per semitone, tokens render at chromaticUnit × spread.
+    // Solves for max tokenSize where:
+    //   pitchAxisLength = pitchRange × chromaticUnit + tokenSize
+    //                   = chromaticUnit × (pitchRange + spread)
     final maxFromPitch = pitchRange > 0
-        ? pitchAxisLength / (pitchRange + 1)
+        ? pitchAxisLength * _chromaticSpread / (pitchRange + _chromaticSpread)
         : pitchAxisLength;
 
     return [widget.tokenSize, maxFromTime, maxFromPitch]
         .reduce((a, b) => a < b ? a : b);
+  }
+
+  /// For each non-pitched note (lyric-only or spacer), linearly interpolate
+  /// a chromatic value from the nearest pitched neighbours on either side.
+  /// This places lyric-only notes vertically between their flanking pitched
+  /// notes; if only one side has a pitched note we clamp to that value.
+  List<int> _interpolateChromatics({
+    required List<int> rawChromatics,
+    required List<int> pitchedIndices,
+  }) {
+    final result = List<int>.from(rawChromatics);
+    final pitchedSet = pitchedIndices.toSet();
+    for (var i = 0; i < rawChromatics.length; i++) {
+      if (pitchedSet.contains(i)) continue;
+
+      int? prevIdx;
+      for (var j = i - 1; j >= 0; j--) {
+        if (pitchedSet.contains(j)) {
+          prevIdx = j;
+          break;
+        }
+      }
+      int? nextIdx;
+      for (var j = i + 1; j < rawChromatics.length; j++) {
+        if (pitchedSet.contains(j)) {
+          nextIdx = j;
+          break;
+        }
+      }
+
+      if (prevIdx != null && nextIdx != null) {
+        final pc = rawChromatics[prevIdx];
+        final nc = rawChromatics[nextIdx];
+        final fraction = (i - prevIdx) / (nextIdx - prevIdx);
+        result[i] = (pc + (nc - pc) * fraction).round();
+      } else if (prevIdx != null) {
+        result[i] = rawChromatics[prevIdx];
+      } else if (nextIdx != null) {
+        result[i] = rawChromatics[nextIdx];
+      }
+      // Both-null case is impossible: caller ensures pitchedIndices is non-empty.
+    }
+    return result;
   }
 
   double _measureLyricWidth(String text, TextStyle style) {
@@ -359,17 +430,36 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
     TextStyle lyricStyle,
     bool isPreview,
   ) {
-    final chromatics = widget.notes.map((n) => n.totalChromatic).toList();
-    final realChromatics = [
+    final rawChromatics = widget.notes.map((n) => n.totalChromatic).toList();
+    final pitchedIndices = <int>[
       for (var i = 0; i < widget.notes.length; i++)
-        if (!widget.notes[i].isSpacer) chromatics[i],
+        if (!widget.notes[i].isSpacer && !widget.notes[i].isLyricOnly) i,
     ];
-    if (realChromatics.isEmpty) {
-      return List.filled(widget.notes.length, Offset.zero);
+
+    final int minC;
+    final int maxC;
+    final List<int> chromatics;
+    if (pitchedIndices.isEmpty) {
+      // No pitch info anywhere — collapse every note to the same chromatic
+      // value so they all land at the canvas's vertical centerline.
+      minC = 0;
+      maxC = 0;
+      chromatics = List.filled(widget.notes.length, 0);
+    } else {
+      final pitched = pitchedIndices.map((i) => rawChromatics[i]).toList();
+      minC = pitched.reduce((a, b) => a < b ? a : b);
+      maxC = pitched.reduce((a, b) => a > b ? a : b);
+      chromatics = _interpolateChromatics(
+        rawChromatics: rawChromatics,
+        pitchedIndices: pitchedIndices,
+      );
     }
-    final minC = realChromatics.reduce((a, b) => a < b ? a : b);
-    final maxC = realChromatics.reduce((a, b) => a > b ? a : b);
-    final pitchSpan = (maxC - minC) * ts;
+
+    // Chromatic positioning is decoupled from token size: each semitone
+    // steps by ts / _chromaticSpread, so adjacent semitones overlap by
+    // the spread factor at render time.
+    final chromaticUnit = ts / _chromaticSpread;
+    final pitchSpan = (maxC - minC) * chromaticUnit;
 
     final margin = isPreview ? 20.0 : 80.0;
 
@@ -414,7 +504,7 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
 
     return List.generate(widget.notes.length, (i) {
       final timePos = timeStart + timeOffsets[i];
-      final pitchOffsetFromMin = (chromatics[i] - minC) * ts;
+      final pitchOffsetFromMin = (chromatics[i] - minC) * chromaticUnit;
 
       switch (widget.layout) {
         case CanvasLayout.horizontal:

@@ -1,21 +1,22 @@
-/// Parses a string of solfège syllables (and optional lyric pairings) into
-/// a list of pitched notes.
+/// Parses a string of lyrics and solfège syllables into a list of pitched
+/// notes and lyric-only entries.
 ///
-/// Syntax:
-///   - Tokens separated by whitespace OR hyphen (`-`)
-///   - Trailing `'` (apostrophe) raises octave by 1 each (e.g. `do'`, `do''`)
-///   - Trailing `,` lowers octave by 1 each (e.g. `do,`, `do,,`)
-///   - Optional `/lyric` suffix attaches a lyric to the syllable
-///     (e.g. `do/twin re/kle`). The lyric is preserved verbatim, including
-///     case. Anything after the first `/` is the lyric.
-///   - Solfège portion is case-insensitive
-///   - Underscore (`_`) inserts a blank spacer the width of a hex.
-///     Multiple underscores create wider gaps (e.g. `___`).
-///   - Pipe (`|`) groups notes for visual clustering. May be a standalone
-///     token or attached to a syllable. Examples:
-///       `do | re mi fa | sol`     → re, mi, fa grouped
-///       `do |re mi fa| sol`       → same as above
-///       `|do re| |mi fa|`         → two separate groups
+/// Syntax (lyric-first model — 2026-06-09):
+///   - Tokens are separated by whitespace.
+///   - Hyphens (`-`) inside a token are preserved as part of the lyric text.
+///   - A token containing `/` splits into `lyric/solfège`:
+///       `Mary/do`     → lyric "Mary" + solfège "do"
+///       `Twink-/so`   → lyric "Twink-" + solfège "so"
+///       `do/`         → lyric "do" (trailing slash forces lyric)
+///       `/do`         → solfège only (leading slash is decorative)
+///   - A token without `/` is classified by whole-string match:
+///       known syllable → solfège (hex + label)
+///       otherwise      → lyric only (no hex)
+///   - Solfège octave markers: trailing `'` raises by 1 each, `,` lowers by 1
+///     each. Applies to the solfège portion only (`Mary/do'`, `do''`).
+///   - Underscore (`_`) inserts a blank spacer. Repeated for wider gaps.
+///   - Pipe (`|`) groups notes for visual clustering. May be standalone or
+///     attached to a token.
 ///
 /// Recognised chromatic syllables (offset 0–11):
 ///   do(0) di/ra(1) re(2) ri/me(3) mi(4) fa(5) fi/se(6)
@@ -29,6 +30,11 @@ class SolfegeNote {
   /// A spacer takes up horizontal space but renders no token.
   final bool isSpacer;
 
+  /// A lyric-only note has no pitch — renders just the lyric text, positioned
+  /// at the vertical center of the canvas (or interpolated between flanking
+  /// pitched notes).
+  final bool isLyricOnly;
+
   /// Optional group identifier — notes with the same id render with a faint
   /// rounded background underneath, visually clustering them.
   final int? groupId;
@@ -39,6 +45,7 @@ class SolfegeNote {
     required this.octave,
     this.lyric,
     this.isSpacer = false,
+    this.isLyricOnly = false,
     this.groupId,
   });
 
@@ -47,8 +54,10 @@ class SolfegeNote {
 
   @override
   String toString() =>
-      '$syllable(off=$chromaticOffset, oct=$octave'
+      '${isLyricOnly ? "[lyric]" : syllable}'
+      '(off=$chromaticOffset, oct=$octave'
       '${lyric == null ? '' : ', lyric=$lyric'}'
+      '${isLyricOnly ? ', lyricOnly' : ''}'
       '${groupId == null ? '' : ', group=$groupId'})';
 }
 
@@ -83,11 +92,23 @@ class SolfegeParser {
 
   static List<String> get knownSyllables => _syllableMap.keys.toList();
 
+  /// Returns true if [token] (after octave-marker stripping and lowercasing)
+  /// is one of the recognised chromatic syllables. Used by the input field's
+  /// syntax-highlighting logic to italicise solfège as the user types.
+  static bool isKnownSyllable(String token) {
+    var t = token.toLowerCase().trim();
+    while (t.endsWith("'") || t.endsWith(',')) {
+      t = t.substring(0, t.length - 1);
+    }
+    return _syllableMap.containsKey(t);
+  }
+
   static SolfegeParseResult parse(String input) {
     final notes = <SolfegeNote>[];
     final unrecognized = <String>[];
 
-    final tokens = input.split(RegExp(r'[\s\-]+')).where((t) => t.isNotEmpty);
+    // Whitespace-only split — hyphens stay inside tokens as lyric chars.
+    final tokens = input.split(RegExp(r'\s+')).where((t) => t.isNotEmpty);
 
     int? currentGroup;
     int nextGroupId = 0;
@@ -105,8 +126,7 @@ class SolfegeParser {
         continue;
       }
 
-      // Strip leading/trailing pipes from the token. A leading pipe opens a
-      // new group; a trailing pipe closes the current group after this note.
+      // Strip leading/trailing pipes from the token.
       var working = raw;
       var openBefore = false;
       var closeAfter = false;
@@ -120,7 +140,6 @@ class SolfegeParser {
       }
 
       if (openBefore) {
-        // Close any existing group, then open a fresh one.
         currentGroup = nextGroupId++;
       }
 
@@ -139,23 +158,48 @@ class SolfegeParser {
         continue;
       }
 
-      // Split off optional lyric (everything after the first '/').
-      String solfPart = working;
+      // Decide what the token represents.
       String? lyric;
-      final slash = working.indexOf('/');
+      String? solfPart;
+
+      final slash = working.lastIndexOf('/');
       if (slash >= 0) {
-        solfPart = working.substring(0, slash);
-        final rest = working.substring(slash + 1);
-        if (rest.isNotEmpty) lyric = rest;
+        // Split at the last slash so lyrics can legitimately contain `/`
+        // (e.g. `and/or/do` → lyric "and/or" + solfège "do").
+        final before = working.substring(0, slash);
+        final after = working.substring(slash + 1);
+        if (before.isNotEmpty) lyric = before;
+        if (after.isNotEmpty) solfPart = after;
+      } else {
+        // No slash — classify by whole-string match against the syllable map.
+        if (isKnownSyllable(working)) {
+          solfPart = working;
+        } else {
+          lyric = working;
+        }
       }
 
-      var token = solfPart.toLowerCase().trim();
-      if (token.isEmpty) {
-        unrecognized.add(raw);
+      // Pure lyric-only — no pitch, just text.
+      if (solfPart == null) {
+        if (lyric == null) {
+          // Empty token (e.g. just a slash). Skip.
+          if (closeAfter) currentGroup = null;
+          continue;
+        }
+        notes.add(SolfegeNote(
+          syllable: '',
+          chromaticOffset: 0,
+          octave: 0,
+          lyric: lyric,
+          isLyricOnly: true,
+          groupId: currentGroup,
+        ));
         if (closeAfter) currentGroup = null;
         continue;
       }
 
+      // Parse solfège portion (octave markers + map lookup).
+      var token = solfPart.toLowerCase().trim();
       var octave = 0;
       while (token.endsWith("'")) {
         octave += 1;
@@ -168,6 +212,7 @@ class SolfegeParser {
 
       final offset = _syllableMap[token];
       if (offset == null) {
+        // Solfège part unrecognised — record but don't render.
         unrecognized.add(raw);
         if (closeAfter) currentGroup = null;
         continue;
