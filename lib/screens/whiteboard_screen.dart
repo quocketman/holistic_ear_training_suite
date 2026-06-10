@@ -38,8 +38,10 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
   // each input change we jump to maxScrollExtent so the most recently typed
   // tokens are always visible at the right edge.
   final _canvasScrollController = ScrollController();
-  // Used to programmatically open the help drawer from the AppBar ? button.
-  final _scaffoldKey = GlobalKey<ScaffoldState>();
+  // Toggled by the AppBar ? icon. The help panel slides in below the input
+  // area as an overlay on the canvas, so users can read the directions while
+  // typing.
+  bool _isHelpVisible = false;
   // Bottom signup banner — persistent across the app.
   final _signupEmailController = TextEditingController();
   final _signupEmailFocus = FocusNode();
@@ -198,14 +200,20 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
   }
 
   void _onShowHelp() {
-    _scaffoldKey.currentState?.openDrawer();
+    setState(() => _isHelpVisible = !_isHelpVisible);
+  }
+
+  void _hideHelp() {
+    if (_isHelpVisible) setState(() => _isHelpVisible = false);
   }
 
   void _onSignup() {
-    // Shortcut from the AppBar — drop the cursor into the persistent
-    // banner's email field. (The banner already lives at the bottom of
-    // every screen, so this is the most direct affordance.)
-    _signupEmailFocus.requestFocus();
+    // AppBar ✉ icon opens the centered signup modal — a more deliberate
+    // signup affordance than just focusing the persistent bottom banner.
+    showDialog<void>(
+      context: context,
+      builder: (_) => const _SignupModal(),
+    );
   }
 
   Future<void> _onSubmitSignup() async {
@@ -263,15 +271,16 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
   // ── Persistent signup banner ──────────────────────────────────────────
 
   Widget _buildSignupBanner() {
-    // "te" (Violet, #7A1DFF) — chromatic offset 10 in the palette.
-    final teColor = ToneTokenColors.getColor(10);
+    // "so" (Blue, #3F55C7) — chromatic offset 7. Matches the AppBar so the
+    // app's chrome reads as a single top + bottom frame.
+    final chromeColor = ToneTokenColors.getColor(7);
     final headline = _signupFeedback ?? 'Weekly lessons in your inbox';
     final headlineColor = _signupFeedback != null && _signupFeedbackIsError
         ? Colors.amber.shade100
         : Colors.white;
 
     return Material(
-      color: teColor,
+      color: chromeColor,
       child: SafeArea(
         top: false,
         child: Padding(
@@ -325,9 +334,9 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
                 onPressed: _isSubmittingSignup ? null : _onSubmitSignup,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.white,
-                  foregroundColor: teColor,
+                  foregroundColor: chromeColor,
                   disabledBackgroundColor: Colors.white70,
-                  disabledForegroundColor: teColor.withValues(alpha: 0.6),
+                  disabledForegroundColor: chromeColor.withValues(alpha: 0.6),
                   elevation: 0,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 22,
@@ -343,7 +352,7 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
                         height: 18,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          color: teColor,
+                          color: chromeColor,
                         ),
                       )
                     : Text(
@@ -363,34 +372,44 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
 
   // ── Help drawer ───────────────────────────────────────────────────────
 
-  Widget _buildHelpDrawer() {
-    // "so" (Blue, #3F55C7) — chromatic offset 7 in the Tune Indigo palette.
-    // Blue is the brand-fit and universal "info" color; white text gives
-    // ~12:1 contrast, exceeding WCAG AAA.
-    final drawerBg = ToneTokenColors.getColor(7);
-    return Drawer(
-      backgroundColor: drawerBg,
-      child: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
+  Widget _buildHelpPanel() {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'How to use Whiteboard',
-              style: GoogleFonts.sourceSans3(
-                fontSize: 26,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'How to use Whiteboard',
+                    style: GoogleFonts.sourceSans3(
+                      fontSize: 26,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Improve your ear by connecting lyrics to solfège.',
+                    style: GoogleFonts.sourceSans3(
+                      fontSize: 17,
+                      color: Colors.white.withValues(alpha: 0.85),
+                    ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 6),
-            Text(
-              'Improve your ear by connecting lyrics to solfège.',
-              style: GoogleFonts.sourceSans3(
-                fontSize: 17,
-                color: Colors.white.withValues(alpha: 0.85),
-              ),
+            IconButton(
+              icon: const Icon(Icons.close, color: Colors.white),
+              tooltip: 'Close',
+              onPressed: _hideHelp,
             ),
-            const SizedBox(height: 24),
+          ],
+        ),
+        const SizedBox(height: 16),
             const _HelpItem(
               text: 'Type a lyric syllable, forward slash, solfège.',
               example: 'rain/so',
@@ -428,9 +447,7 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
                   'Place | at the beginning and ending of the group.',
               example: '| do mi so |',
             ),
-          ],
-        ),
-      ),
+      ],
     );
   }
 
@@ -449,11 +466,10 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
     final layout = _resolvedLayout(context);
     final canvasSize = layout.exportSize;
 
-    // "te" (Violet, #7A1DFF) — primary Tune Indigo chrome colour.
-    final chromeColor = ToneTokenColors.getColor(10);
+    // "so" (Blue, #3F55C7) — chromatic offset 7. AppBar uses this; the
+    // bottom signup banner mirrors it so chrome reads as one cohesive frame.
+    final chromeColor = ToneTokenColors.getColor(7);
     return Scaffold(
-      key: _scaffoldKey,
-      drawer: _buildHelpDrawer(),
       bottomNavigationBar: _buildSignupBanner(),
       appBar: AppBar(
         backgroundColor: chromeColor,
@@ -591,22 +607,45 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
-                return SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  controller: _canvasScrollController,
-                  child: WhiteboardCanvas(
-                    notes: _parsed.notes,
-                    layout: layout,
-                    tokenSize: 50.0,
-                    fitToSize: Size(
-                      constraints.maxWidth - 24,
-                      constraints.maxHeight - 24,
+                const helpPanelWidth = 360.0;
+                return Stack(
+                  children: [
+                    // Live preview — fills available space.
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      controller: _canvasScrollController,
+                      child: WhiteboardCanvas(
+                        notes: _parsed.notes,
+                        layout: layout,
+                        tokenSize: 50.0,
+                        fitToSize: Size(
+                          constraints.maxWidth - 24,
+                          constraints.maxHeight - 24,
+                        ),
+                        title: _titleController.text.trim(),
+                        justify: _justify,
+                        onNoteDown: _onNoteDown,
+                        onNoteUp: _onNoteUp,
+                      ),
                     ),
-                    title: _titleController.text.trim(),
-                    justify: _justify,
-                    onNoteDown: _onNoteDown,
-                    onNoteUp: _onNoteUp,
-                  ),
+                    // Help panel — slides in from the right edge of the
+                    // canvas, leaving the left side (where solfège
+                    // typically lives, especially before auto-scroll
+                    // kicks in) unobstructed.
+                    AnimatedPositioned(
+                      duration: const Duration(milliseconds: 220),
+                      curve: Curves.easeOutCubic,
+                      right: _isHelpVisible ? 0 : -helpPanelWidth,
+                      top: 0,
+                      bottom: 0,
+                      width: helpPanelWidth,
+                      child: Material(
+                        color: ToneTokenColors.getColor(8), // le purple
+                        elevation: 8,
+                        child: _buildHelpPanel(),
+                      ),
+                    ),
+                  ],
                 );
               },
             ),
@@ -746,6 +785,189 @@ class _HelpItem extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Centered signup modal triggered by the AppBar ✉ icon. Has its own state
+/// so the parent screen doesn't carry modal-specific submission state.
+class _SignupModal extends StatefulWidget {
+  const _SignupModal();
+
+  @override
+  State<_SignupModal> createState() => _SignupModalState();
+}
+
+class _SignupModalState extends State<_SignupModal> {
+  final _emailController = TextEditingController();
+  bool _isSubmitting = false;
+  String? _feedback;
+  bool _feedbackIsError = false;
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (_isSubmitting) return;
+    final email = _emailController.text.trim();
+    if (email.isEmpty) return;
+
+    setState(() {
+      _isSubmitting = true;
+      _feedback = null;
+    });
+
+    final result = await SignupService.subscribe(email);
+    if (!mounted) return;
+
+    setState(() {
+      _isSubmitting = false;
+      _feedback = result.success
+          ? (result.alreadySubscribed
+              ? "You're already on the list — thanks!"
+              : "You're on the list. Welcome!")
+          : (result.errorMessage ?? 'Something went wrong.');
+      _feedbackIsError = !result.success;
+    });
+
+    // On success, give the user a beat to read the confirmation and auto-close.
+    if (result.success) {
+      await Future.delayed(const Duration(milliseconds: 1500));
+      if (mounted) Navigator.of(context).pop();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final soBlue = ToneTokenColors.getColor(7);
+
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 480),
+        padding: const EdgeInsets.fromLTRB(28, 20, 20, 28),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1A1A1A),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      'Stay connected with Tune Indigo',
+                      style: GoogleFonts.sourceSans3(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white70),
+                  tooltip: 'Close',
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Weekly ear-training lessons, new tools, and tips delivered to your inbox.',
+              style: GoogleFonts.sourceSans3(
+                fontSize: 15,
+                color: Colors.white.withValues(alpha: 0.78),
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 22),
+            TextField(
+              controller: _emailController,
+              autofocus: true,
+              enabled: !_isSubmitting,
+              keyboardType: TextInputType.emailAddress,
+              textInputAction: TextInputAction.send,
+              onSubmitted: (_) => _submit(),
+              style: GoogleFonts.sourceSans3(
+                fontSize: 16,
+                color: Colors.black87,
+              ),
+              decoration: InputDecoration(
+                hintText: 'your@email.com',
+                hintStyle: GoogleFonts.sourceSans3(
+                  fontSize: 16,
+                  color: Colors.black45,
+                ),
+                filled: true,
+                fillColor: Colors.white,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(4),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 14,
+                ),
+              ),
+            ),
+            if (_feedback != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                _feedback!,
+                style: GoogleFonts.sourceSans3(
+                  fontSize: 14,
+                  color: _feedbackIsError
+                      ? Colors.amber.shade300
+                      : Colors.lightGreenAccent.shade100,
+                ),
+              ),
+            ],
+            const SizedBox(height: 18),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _isSubmitting ? null : _submit,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: soBlue,
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor: soBlue.withValues(alpha: 0.5),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  elevation: 0,
+                ),
+                child: _isSubmitting
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : Text(
+                        'Subscribe',
+                        style: GoogleFonts.sourceSans3(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
