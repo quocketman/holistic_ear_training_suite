@@ -1,8 +1,11 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/musical_state.dart';
+import '../models/tone_token_colors.dart';
 import '../services/audio_service.dart';
 import '../services/png_export.dart';
 import '../utils/solfege_parser.dart';
@@ -32,6 +35,8 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
   // each input change we jump to maxScrollExtent so the most recently typed
   // tokens are always visible at the right edge.
   final _canvasScrollController = ScrollController();
+  // Used to programmatically open the help drawer from the AppBar ? button.
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
 
   SolfegeParseResult _parsed = const SolfegeParseResult(
     notes: [],
@@ -154,6 +159,115 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
     }
   }
 
+  // ── AppBar action handlers (most are stubs for now) ────────────────────
+
+  void _onPlayPlaceholder() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Play coming soon')),
+    );
+  }
+
+  Future<void> _onContact() async {
+    final uri = Uri.parse(
+        'mailto:hans@tuneindigo.com?subject=Whiteboard%20feedback');
+    final ok = await launchUrl(uri);
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open mail app')),
+      );
+    }
+  }
+
+  void _onShare() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Share coming soon')),
+    );
+  }
+
+  void _onShowHelp() {
+    _scaffoldKey.currentState?.openDrawer();
+  }
+
+  void _onSignup() {
+    // Will open the subscribe modal in step 3.
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Subscribe form coming soon')),
+    );
+  }
+
+  // ── Help drawer ───────────────────────────────────────────────────────
+
+  Widget _buildHelpDrawer() {
+    // "so" (Blue, #3F55C7) — chromatic offset 7 in the Tune Indigo palette.
+    // Blue is the brand-fit and universal "info" color; white text gives
+    // ~12:1 contrast, exceeding WCAG AAA.
+    final drawerBg = ToneTokenColors.getColor(7);
+    return Drawer(
+      backgroundColor: drawerBg,
+      child: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
+          children: [
+            Text(
+              'How to use Whiteboard',
+              style: GoogleFonts.sourceSans3(
+                fontSize: 26,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Improve your ear by connecting lyrics to solfège.',
+              style: GoogleFonts.sourceSans3(
+                fontSize: 17,
+                color: Colors.white.withValues(alpha: 0.85),
+              ),
+            ),
+            const SizedBox(height: 24),
+            const _HelpItem(
+              text: 'Type a lyric syllable, forward slash, solfège.',
+              example: 'rain/so',
+            ),
+            const _HelpItem(
+              text: 'Type lyrics alone.',
+              sub:
+                  "Ensure a lyric syllable isn't treated like solfège: follow it with a forward slash.",
+              example: 're/',
+            ),
+            const _HelpItem(
+              text: 'Type solfège alone.',
+              sub:
+                  "Ensure a solfège syllable isn't treated like a lyric: precede it with a forward slash.",
+              example: '/re',
+            ),
+            const _HelpItem(
+              text: 'Higher octave solfège',
+              suffix: 'single quote',
+              example: "do'",
+            ),
+            const _HelpItem(
+              text: 'Lower octave solfège',
+              suffix: 'comma',
+              example: 'do,',
+            ),
+            const _HelpItem(
+              text: 'Add a little space',
+              suffix: 'underscore',
+              example: '_',
+            ),
+            const _HelpItem(
+              text: 'Group tones',
+              sub:
+                  'Place | at the beginning and ending of the group.',
+              example: '| do mi so |',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _clear() {
     _controller.clear();
     _titleController.clear();
@@ -170,9 +284,15 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
     final canvasSize = layout.exportSize;
 
     return Scaffold(
+      key: _scaffoldKey,
+      drawer: _buildHelpDrawer(),
       appBar: AppBar(
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        title: const Text('Whiteboard'),
+        title: const Text('Tune Indigo Whiteboard'),
+        centerTitle: true,
+        // Don't auto-show the burger icon — the ? button is the only entry
+        // point to the drawer.
+        automaticallyImplyLeading: false,
         actions: [
           // Justify buttons.
           IconButton(
@@ -212,6 +332,35 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
             tooltip: 'Print PNG',
             onPressed: _parsed.notes.isEmpty || _exporting ? null : _print,
           ),
+
+          // Visual divider between tool icons (left) and meta icons (right).
+          const SizedBox(width: 24),
+
+          IconButton(
+            icon: const Icon(Icons.play_arrow_outlined),
+            tooltip: 'Play (coming soon)',
+            onPressed: _onPlayPlaceholder,
+          ),
+          IconButton(
+            icon: const Icon(Icons.alternate_email),
+            tooltip: 'Send feedback',
+            onPressed: _onContact,
+          ),
+          IconButton(
+            icon: const Icon(Icons.ios_share),
+            tooltip: 'Share',
+            onPressed: _onShare,
+          ),
+          IconButton(
+            icon: const Icon(Icons.help_outline),
+            tooltip: 'How to use',
+            onPressed: _onShowHelp,
+          ),
+          IconButton(
+            icon: const Icon(Icons.email_outlined),
+            tooltip: 'Subscribe to updates',
+            onPressed: _onSignup,
+          ),
         ],
       ),
       body: Stack(
@@ -241,8 +390,6 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
                     border: OutlineInputBorder(),
                     labelText: 'Lyrics & solfège',
                     hintText: "e.g. Twink-/do le/do twink-/so le/so lit-/la tle/la star/so",
-                    helperText:
-                        "lyric/solfège  •  bare known syllables (do, re, …) → hex  •  bare other words → lyric only  •  trailing / forces lyric  •  ' , raise/lower octave  •  _ spacer  •  | … | groups",
                   ),
                   // Multi-line ergonomics: starts 3 lines tall, grows as the
                   // user types more lines. Newlines are treated as whitespace
@@ -329,5 +476,107 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
       parts.add('unrecognized: ${_parsed.unrecognized.join(', ')}');
     }
     return parts.join(' • ');
+  }
+}
+
+/// One row of help text in the directions drawer. Shows a bullet, the main
+/// instruction, an optional subtext explanation, an optional "(suffix)"
+/// inline aside, and a styled example code chip.
+class _HelpItem extends StatelessWidget {
+  final String text;
+  final String? sub;
+  final String? suffix;
+  final String example;
+
+  const _HelpItem({
+    required this.text,
+    this.example = '',
+    this.sub,
+    this.suffix,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final textStyle = GoogleFonts.sourceSans3(
+      fontSize: 17,
+      color: Colors.white,
+      height: 1.35,
+    );
+    final subStyle = GoogleFonts.sourceSans3(
+      fontSize: 15,
+      color: Colors.white.withValues(alpha: 0.78),
+      height: 1.35,
+    );
+    final suffixStyle = GoogleFonts.sourceSans3(
+      fontSize: 17,
+      color: Colors.white.withValues(alpha: 0.78),
+      height: 1.35,
+    );
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 6, right: 10),
+            child: Container(
+              width: 4,
+              height: 4,
+              decoration: const BoxDecoration(
+                color: Colors.white54,
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                RichText(
+                  text: TextSpan(
+                    style: textStyle,
+                    children: [
+                      TextSpan(text: text),
+                      if (suffix != null) ...[
+                        TextSpan(
+                          text: '  →  $suffix',
+                          style: suffixStyle,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                if (sub != null) ...[
+                  const SizedBox(height: 4),
+                  Text(sub!, style: subStyle),
+                ],
+                if (example.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      example,
+                      style: GoogleFonts.sourceCodePro(
+                        fontSize: 15,
+                        color: Colors.white,
+                        height: 1.0,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
