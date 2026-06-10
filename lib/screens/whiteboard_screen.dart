@@ -765,7 +765,11 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
                       child: WhiteboardCanvas(
                         notes: _parsed.notes,
                         layout: layout,
-                        tokenSize: 50.0,
+                        // Maximum diameter — actual size shrinks to fit
+                        // pitch range on narrow viewports. Phones end up at
+                        // the pitch-axis ceiling (~35-40 px), iPads grow
+                        // into the 80-110 range, desktops cap at 120.
+                        tokenSize: 120.0,
                         fitToSize: Size(
                           constraints.maxWidth - 24,
                           constraints.maxHeight - 24,
