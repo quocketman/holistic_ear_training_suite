@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -8,6 +10,7 @@ import '../models/musical_state.dart';
 import '../models/tone_token_colors.dart';
 import '../services/audio_service.dart';
 import '../services/png_export.dart';
+import '../services/signup_service.dart';
 import '../utils/solfege_parser.dart';
 import '../widgets/key_octave_controls.dart';
 import '../widgets/solfege_highlight_controller.dart';
@@ -37,6 +40,13 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
   final _canvasScrollController = ScrollController();
   // Used to programmatically open the help drawer from the AppBar ? button.
   final _scaffoldKey = GlobalKey<ScaffoldState>();
+  // Bottom signup banner — persistent across the app.
+  final _signupEmailController = TextEditingController();
+  final _signupEmailFocus = FocusNode();
+  bool _isSubmittingSignup = false;
+  String? _signupFeedback;
+  bool _signupFeedbackIsError = false;
+  Timer? _signupFeedbackTimer;
 
   SolfegeParseResult _parsed = const SolfegeParseResult(
     notes: [],
@@ -70,6 +80,9 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
     _controller.dispose();
     _titleController.dispose();
     _canvasScrollController.dispose();
+    _signupEmailController.dispose();
+    _signupEmailFocus.dispose();
+    _signupFeedbackTimer?.cancel();
     super.dispose();
   }
 
@@ -189,9 +202,162 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
   }
 
   void _onSignup() {
-    // Will open the subscribe modal in step 3.
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Subscribe form coming soon')),
+    // Shortcut from the AppBar — drop the cursor into the persistent
+    // banner's email field. (The banner already lives at the bottom of
+    // every screen, so this is the most direct affordance.)
+    _signupEmailFocus.requestFocus();
+  }
+
+  Future<void> _onSubmitSignup() async {
+    if (_isSubmittingSignup) return;
+    final email = _signupEmailController.text.trim();
+    if (email.isEmpty) return;
+
+    // Visible failure until the Worker URL is pasted into SignupService.
+    if (!SignupService.endpointConfigured) {
+      _showSignupFeedback(
+        "Form not yet wired — Worker URL still says REPLACE-ME",
+        isError: true,
+      );
+      return;
+    }
+
+    setState(() {
+      _isSubmittingSignup = true;
+      _signupFeedback = null;
+    });
+
+    final result = await SignupService.subscribe(email);
+
+    if (!mounted) return;
+    setState(() => _isSubmittingSignup = false);
+
+    if (result.success) {
+      _signupEmailController.clear();
+      _signupEmailFocus.unfocus();
+      _showSignupFeedback(
+        result.alreadySubscribed
+            ? "You're already on the list — thanks!"
+            : "You're on the list. Welcome!",
+        isError: false,
+      );
+    } else {
+      _showSignupFeedback(
+        result.errorMessage ?? 'Something went wrong.',
+        isError: true,
+      );
+    }
+  }
+
+  void _showSignupFeedback(String message, {required bool isError}) {
+    setState(() {
+      _signupFeedback = message;
+      _signupFeedbackIsError = isError;
+    });
+    _signupFeedbackTimer?.cancel();
+    _signupFeedbackTimer = Timer(const Duration(seconds: 6), () {
+      if (mounted) setState(() => _signupFeedback = null);
+    });
+  }
+
+  // ── Persistent signup banner ──────────────────────────────────────────
+
+  Widget _buildSignupBanner() {
+    // "te" (Violet, #7A1DFF) — chromatic offset 10 in the palette.
+    final teColor = ToneTokenColors.getColor(10);
+    final headline = _signupFeedback ?? 'Weekly lessons in your inbox';
+    final headlineColor = _signupFeedback != null && _signupFeedbackIsError
+        ? Colors.amber.shade100
+        : Colors.white;
+
+    return Material(
+      color: teColor,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          child: Row(
+            children: [
+              AnimatedDefaultTextStyle(
+                duration: const Duration(milliseconds: 200),
+                style: GoogleFonts.sourceSans3(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w600,
+                  color: headlineColor,
+                ),
+                child: Text(headline),
+              ),
+              const SizedBox(width: 20),
+              Expanded(
+                child: TextField(
+                  controller: _signupEmailController,
+                  focusNode: _signupEmailFocus,
+                  enabled: !_isSubmittingSignup,
+                  keyboardType: TextInputType.emailAddress,
+                  textInputAction: TextInputAction.send,
+                  onSubmitted: (_) => _onSubmitSignup(),
+                  style: GoogleFonts.sourceSans3(
+                    fontSize: 15,
+                    color: Colors.black87,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: 'your@email.com',
+                    hintStyle: GoogleFonts.sourceSans3(
+                      fontSize: 15,
+                      color: Colors.black45,
+                    ),
+                    filled: true,
+                    fillColor: Colors.white,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(4),
+                      borderSide: BorderSide.none,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 12,
+                    ),
+                    isDense: true,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              ElevatedButton(
+                onPressed: _isSubmittingSignup ? null : _onSubmitSignup,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: teColor,
+                  disabledBackgroundColor: Colors.white70,
+                  disabledForegroundColor: teColor.withValues(alpha: 0.6),
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 22,
+                    vertical: 14,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+                child: _isSubmittingSignup
+                    ? SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: teColor,
+                        ),
+                      )
+                    : Text(
+                        'Subscribe',
+                        style: GoogleFonts.sourceSans3(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -283,11 +449,15 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
     final layout = _resolvedLayout(context);
     final canvasSize = layout.exportSize;
 
+    // "te" (Violet, #7A1DFF) — primary Tune Indigo chrome colour.
+    final chromeColor = ToneTokenColors.getColor(10);
     return Scaffold(
       key: _scaffoldKey,
       drawer: _buildHelpDrawer(),
+      bottomNavigationBar: _buildSignupBanner(),
       appBar: AppBar(
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        backgroundColor: chromeColor,
+        foregroundColor: Colors.white,
         title: const Text('Tune Indigo Whiteboard'),
         centerTitle: true,
         // Don't auto-show the burger icon — the ? button is the only entry

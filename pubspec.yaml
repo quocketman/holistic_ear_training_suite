@@ -39,6 +39,9 @@ dependencies:
   # mailto: + share-link launching
   url_launcher: ^6.2.0
 
+  # POST to the Mailchimp signup proxy worker
+  http: ^1.2.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
