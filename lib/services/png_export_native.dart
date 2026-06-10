@@ -8,8 +8,32 @@ import 'package:file_selector/file_selector.dart';
 Future<String> savePngBytes({
   required String filename,
   required Uint8List bytes,
+}) async =>
+    _saveBytes(
+      filename: filename,
+      bytes: bytes,
+      typeLabel: 'PNG image',
+      extension: 'png',
+    );
+
+Future<String> savePdfBytes({
+  required String filename,
+  required Uint8List bytes,
+}) async =>
+    _saveBytes(
+      filename: filename,
+      bytes: bytes,
+      typeLabel: 'PDF document',
+      extension: 'pdf',
+    );
+
+Future<String> _saveBytes({
+  required String filename,
+  required Uint8List bytes,
+  required String typeLabel,
+  required String extension,
 }) async {
-  const typeGroup = XTypeGroup(label: 'PNG image', extensions: ['png']);
+  final typeGroup = XTypeGroup(label: typeLabel, extensions: [extension]);
   final location = await getSaveLocation(
     suggestedName: filename,
     acceptedTypeGroups: [typeGroup],
@@ -17,13 +41,10 @@ Future<String> savePngBytes({
   if (location == null) {
     throw const _SaveCancelled();
   }
-
-  // Ensure the path ends with .png.
   var path = location.path;
-  if (!path.toLowerCase().endsWith('.png')) {
-    path = '$path.png';
+  if (!path.toLowerCase().endsWith('.$extension')) {
+    path = '$path.$extension';
   }
-
   final file = File(path);
   await file.writeAsBytes(bytes, flush: true);
   return file.path;

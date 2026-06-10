@@ -2,17 +2,19 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../models/enums.dart';
 import '../models/musical_state.dart';
 import '../models/tone_token_colors.dart';
 import '../services/audio_service.dart';
-import '../services/png_export.dart';
+import '../services/pdf_export.dart';
 import '../services/signup_service.dart';
+import '../services/url_state.dart';
 import '../utils/solfege_parser.dart';
-import '../widgets/key_octave_controls.dart';
 import '../widgets/solfege_highlight_controller.dart';
 import '../widgets/whiteboard_canvas.dart';
 
@@ -28,6 +30,9 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
   static String _persistedSolfege = '';
   static String _persistedTitle = '';
   static CanvasJustify _persistedJustify = CanvasJustify.left;
+  // Session-scoped — resets on page reload. Suppresses the welcome modal
+  // after the user has dismissed it once in this browser tab.
+  static bool _welcomeShown = false;
 
   late final SolfegeHighlightController _controller;
   late final TextEditingController _titleController;
@@ -60,11 +65,28 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
   @override
   void initState() {
     super.initState();
-    _controller = SolfegeHighlightController(text: _persistedSolfege);
+    // If the page URL carries an encoded solfège payload (set by a PDF's
+    // "Edit in Whiteboard" link or a share URL), it overrides the
+    // in-memory persisted text. URL > previous session.
+    final fromUrl = readSolfegeTextFromUrl();
+    final initialText =
+        (fromUrl != null && fromUrl.isNotEmpty) ? fromUrl : _persistedSolfege;
+    _controller = SolfegeHighlightController(text: initialText);
     _titleController = TextEditingController(text: _persistedTitle);
     _justify = _persistedJustify;
-    if (_persistedSolfege.isNotEmpty) {
-      _parsed = SolfegeParser.parse(_persistedSolfege);
+    if (initialText.isNotEmpty) {
+      _parsed = SolfegeParser.parse(initialText);
+    }
+    // Show the welcome modal once per browser tab — first paint after build.
+    if (!_welcomeShown) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _welcomeShown = true;
+        showDialog<void>(
+          context: context,
+          builder: (_) => const _WelcomeModal(),
+        );
+      });
     }
   }
 
@@ -143,18 +165,21 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
     return CanvasLayout.horizontal;
   }
 
-  Future<void> _print() async {
+  Future<void> _downloadPdf() async {
     if (_parsed.notes.isEmpty || _exporting) return;
     setState(() => _exporting = true);
     try {
-      // Use title for filename, falling back to generic prefix.
       final title = _titleController.text.trim();
       final prefix = title.isNotEmpty
-          ? title.replaceAll(RegExp(r'[^\w\s-]'), '').replaceAll(RegExp(r'\s+'), '_')
+          ? title
+              .replaceAll(RegExp(r'[^\w\s-]'), '')
+              .replaceAll(RegExp(r'\s+'), '_')
           : 'whiteboard';
-      final destination = await exportRepaintBoundaryToPng(
+      final destination = await exportRepaintBoundaryToPdf(
         boundaryKey: _canvasKey,
         filenamePrefix: prefix,
+        title: title,
+        solfegeText: _controller.text,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -162,7 +187,6 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      // Quietly ignore user-cancelled save dialogs.
       final msg = e.toString();
       if (!msg.contains('Save cancelled')) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -174,29 +198,138 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
     }
   }
 
-  // ── AppBar action handlers (most are stubs for now) ────────────────────
+  // ── KEY + OCTAVE pickers (live in the AppBar leading row) ─────────────
 
-  void _onPlayPlaceholder() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Play coming soon')),
+  /// Pitch-class picker — replaces the old in-body `KeyOctaveControls` key
+  /// dropdown. PopupMenu shows the 12 pitch classes; tapping one sets the
+  /// tonic while preserving the current octave.
+  Widget _buildKeyPicker() {
+    const octaveOffset = 4; // MIDI 48 = middle "do" octave 0
+    return Consumer<MusicalState>(
+      builder: (context, state, _) {
+        final current = state.currentTonicPitchClass;
+        return PopupMenuButton<PitchClass>(
+          tooltip: 'Key — do = ${current.displayName}',
+          icon: const Icon(Icons.vpn_key_outlined),
+          onSelected: (pc) {
+            final octave = (state.currentTonic ~/ 12) - octaveOffset;
+            state.currentTonic =
+                (pc.value + (octave + octaveOffset) * 12).clamp(0, 127);
+          },
+          itemBuilder: (_) => PitchClass.values
+              .map((p) => PopupMenuItem(
+                    value: p,
+                    child: Text(
+                      'do = ${p.displayName}',
+                      style: TextStyle(
+                        fontWeight: p == current
+                            ? FontWeight.bold
+                            : FontWeight.normal,
+                      ),
+                    ),
+                  ))
+              .toList(),
+        );
+      },
     );
   }
 
-  Future<void> _onContact() async {
-    final uri = Uri.parse(
-        'mailto:hans@tuneindigo.com?subject=Whiteboard%20feedback');
-    final ok = await launchUrl(uri);
-    if (!ok && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not open mail app')),
-      );
-    }
+  /// Octave picker — replaces the old in-body octave +/- stepper. PopupMenu
+  /// shows offsets −2 through +2 from the middle-do octave.
+  Widget _buildOctavePicker() {
+    const octaveOffset = 4;
+    return Consumer<MusicalState>(
+      builder: (context, state, _) {
+        final pc = state.currentTonicPitchClass;
+        final current = (state.currentTonic ~/ 12) - octaveOffset;
+        return PopupMenuButton<int>(
+          tooltip: 'Octave (currently $current)',
+          onSelected: (oct) {
+            state.currentTonic =
+                (pc.value + (oct + octaveOffset) * 12).clamp(0, 127);
+          },
+          itemBuilder: (_) => [-2, -1, 0, 1, 2]
+              .map((o) => PopupMenuItem(
+                    value: o,
+                    child: Text(
+                      'Octave $o',
+                      style: TextStyle(
+                        fontWeight:
+                            o == current ? FontWeight.bold : FontWeight.normal,
+                      ),
+                    ),
+                  ))
+              .toList(),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+            child: Text(
+              '8ve',
+              style: GoogleFonts.sourceSans3(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // ── AppBar action handlers ─────────────────────────────────────────────
+
+  Future<void> _openTuneIndigo() async {
+    await launchUrl(Uri.parse('https://tuneindigo.com'));
+  }
+
+  Future<void> _openVideo() async {
+    // Tune Indigo Music YouTube channel — once a specific intro video is
+    // recorded, swap in its watch URL.
+    await launchUrl(Uri.parse('https://www.youtube.com/@tuneindigomusic'));
   }
 
   void _onShare() {
+    // Stub — full share UX (URL state encoding + social) is the next
+    // feature after wrap-up.
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Share coming soon')),
     );
+  }
+
+  // Step-through justify: one icon, cycles left → center → right → left.
+  IconData get _justifyIcon {
+    switch (_justify) {
+      case CanvasJustify.left:
+        return Icons.format_align_left;
+      case CanvasJustify.center:
+        return Icons.format_align_center;
+      case CanvasJustify.right:
+        return Icons.format_align_right;
+    }
+  }
+
+  String get _justifyLabel {
+    switch (_justify) {
+      case CanvasJustify.left:
+        return 'left';
+      case CanvasJustify.center:
+        return 'center';
+      case CanvasJustify.right:
+        return 'right';
+    }
+  }
+
+  void _cycleJustify() {
+    setState(() {
+      switch (_justify) {
+        case CanvasJustify.left:
+          _justify = CanvasJustify.center;
+        case CanvasJustify.center:
+          _justify = CanvasJustify.right;
+        case CanvasJustify.right:
+          _justify = CanvasJustify.left;
+      }
+    });
   }
 
   void _onShowHelp() {
@@ -263,7 +396,7 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
       _signupFeedbackIsError = isError;
     });
     _signupFeedbackTimer?.cancel();
-    _signupFeedbackTimer = Timer(const Duration(seconds: 6), () {
+    _signupFeedbackTimer = Timer(const Duration(seconds: 15), () {
       if (mounted) setState(() => _signupFeedback = null);
     });
   }
@@ -476,66 +609,72 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
         foregroundColor: Colors.white,
         title: const Text('Tune Indigo Whiteboard'),
         centerTitle: true,
-        // Don't auto-show the burger icon — the ? button is the only entry
-        // point to the drawer.
         automaticallyImplyLeading: false,
+        leadingWidth: 220,
+        leading: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Bulb logo links to tuneindigo.com.
+            InkWell(
+              onTap: _openTuneIndigo,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
+                child: SvgPicture.asset(
+                  'assets/branding/brand_bulb_tipped.svg',
+                  width: 26,
+                  height: 26,
+                  colorFilter: const ColorFilter.mode(
+                    Colors.white,
+                    BlendMode.srcIn,
+                  ),
+                ),
+              ),
+            ),
+            _buildKeyPicker(),
+            _buildOctavePicker(),
+            // PLAY — greyed out for now. Real keyboard-arrow step-through
+            // playback lands as the next feature.
+            const IconButton(
+              icon: Icon(Icons.play_arrow_outlined),
+              tooltip: 'Play (coming soon)',
+              onPressed: null,
+            ),
+          ],
+        ),
         actions: [
-          // Justify buttons.
-          IconButton(
-            icon: const Icon(Icons.format_align_left),
-            color: _justify == CanvasJustify.left ? Colors.white : Colors.white38,
-            tooltip: 'Left',
-            onPressed: () => setState(() => _justify = CanvasJustify.left),
-          ),
-          IconButton(
-            icon: const Icon(Icons.format_align_center),
-            color: _justify == CanvasJustify.center ? Colors.white : Colors.white38,
-            tooltip: 'Center',
-            onPressed: () => setState(() => _justify = CanvasJustify.center),
-          ),
-          IconButton(
-            icon: const Icon(Icons.format_align_right),
-            color: _justify == CanvasJustify.right ? Colors.white : Colors.white38,
-            tooltip: 'Right',
-            onPressed: () => setState(() => _justify = CanvasJustify.right),
-          ),
-          const SizedBox(width: 8),
-          IconButton(
-            icon: const Icon(Icons.clear),
-            tooltip: 'Clear',
-            onPressed: _parsed.notes.isEmpty && _titleController.text.isEmpty
-                ? null
-                : _clear,
-          ),
           IconButton(
             icon: _exporting
                 ? const SizedBox(
                     width: 20,
                     height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
                   )
-                : const Icon(Icons.print),
-            tooltip: 'Print PNG',
-            onPressed: _parsed.notes.isEmpty || _exporting ? null : _print,
-          ),
-
-          // Visual divider between tool icons (left) and meta icons (right).
-          const SizedBox(width: 24),
-
-          IconButton(
-            icon: const Icon(Icons.play_arrow_outlined),
-            tooltip: 'Play (coming soon)',
-            onPressed: _onPlayPlaceholder,
+                : const Icon(Icons.file_download_outlined),
+            tooltip: 'Download PDF',
+            onPressed: _parsed.notes.isEmpty || _exporting ? null : _downloadPdf,
           ),
           IconButton(
-            icon: const Icon(Icons.alternate_email),
-            tooltip: 'Send feedback',
-            onPressed: _onContact,
-          ),
-          IconButton(
-            icon: const Icon(Icons.ios_share),
+            icon: const Icon(Icons.share_outlined),
             tooltip: 'Share',
             onPressed: _onShare,
+          ),
+          const IconButton(
+            icon: Icon(Icons.save_outlined),
+            tooltip: 'Save (coming soon)',
+            onPressed: null,
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete_sweep_outlined),
+            tooltip: 'Clear',
+            onPressed: _parsed.notes.isEmpty && _titleController.text.isEmpty
+                ? null
+                : _clear,
           ),
           IconButton(
             icon: const Icon(Icons.help_outline),
@@ -543,10 +682,21 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
             onPressed: _onShowHelp,
           ),
           IconButton(
+            icon: const Icon(Icons.smart_display_outlined),
+            tooltip: 'Watch intro',
+            onPressed: _openVideo,
+          ),
+          IconButton(
             icon: const Icon(Icons.email_outlined),
             tooltip: 'Subscribe to updates',
             onPressed: _onSignup,
           ),
+          IconButton(
+            icon: Icon(_justifyIcon),
+            tooltip: 'Align ($_justifyLabel)',
+            onPressed: _cycleJustify,
+          ),
+          const SizedBox(width: 4),
         ],
       ),
       body: Stack(
@@ -585,8 +735,6 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
                   keyboardType: TextInputType.multiline,
                   textInputAction: TextInputAction.newline,
                 ),
-                const SizedBox(height: 8),
-                const KeyOctaveControls(),
                 if (_parsed.unrecognized.isNotEmpty || _statusLine().isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(top: 4),
@@ -640,9 +788,14 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
                       bottom: 0,
                       width: helpPanelWidth,
                       child: Material(
-                        color: ToneTokenColors.getColor(8), // le purple
+                        color: ToneTokenColors.getColor(7), // so blue
                         elevation: 8,
-                        child: _buildHelpPanel(),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.white, width: 2),
+                          ),
+                          child: _buildHelpPanel(),
+                        ),
                       ),
                     ),
                   ],
@@ -964,6 +1117,89 @@ class _SignupModalState extends State<_SignupModal> {
                           fontWeight: FontWeight.bold,
                         ),
                       ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// First-load welcome modal. Centered, so-blue card with the Tune Indigo
+/// brand bulb at the top, a headline matched to the AppBar title size, and
+/// body text styled like the help drawer's item-level text.
+///
+/// Auto-shown once per browser tab via [_WhiteboardScreenState._welcomeShown].
+/// The temp body copy will be revised by Hans tomorrow.
+class _WelcomeModal extends StatelessWidget {
+  const _WelcomeModal();
+
+  @override
+  Widget build(BuildContext context) {
+    final soBlue = ToneTokenColors.getColor(7);
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: Stack(
+          children: [
+            // Card body.
+            Container(
+              decoration: BoxDecoration(
+                color: soBlue,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              padding: const EdgeInsets.fromLTRB(36, 36, 36, 36),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SvgPicture.asset(
+                    'assets/branding/brand_bulb_tipped.svg',
+                    width: 72,
+                    height: 72,
+                    colorFilter: const ColorFilter.mode(
+                      Colors.white,
+                      BlendMode.srcIn,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  // Headline — matches the AppBar title size visually.
+                  Text(
+                    'Welcome',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.sourceSans3(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  // Body — styled like the help drawer's item text.
+                  Text(
+                    'One of the best ways to improve your ear and musical '
+                    'imagination is to translate the lyrics of a song you '
+                    'know well into solfège. Take it for a spin!',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.sourceSans3(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.white,
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // Dismiss X in the top-right corner of the card.
+            Positioned(
+              top: 6,
+              right: 6,
+              child: IconButton(
+                icon: const Icon(Icons.close, color: Colors.white),
+                tooltip: 'Close',
+                onPressed: () => Navigator.of(context).pop(),
               ),
             ),
           ],

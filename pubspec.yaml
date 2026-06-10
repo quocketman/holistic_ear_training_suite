@@ -42,6 +42,9 @@ dependencies:
   # POST to the Mailchimp signup proxy worker
   http: ^1.2.0
 
+  # PDF generation for the Whiteboard download
+  pdf: ^3.10.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -55,6 +58,8 @@ flutter:
     - assets/hexagons/
     # Level definitions
     - assets/levels/
+    # Brand assets (logo, etc.)
+    - assets/branding/
     # Uncomment and add your audio assets here
     # - assets/audio/intervals/
     # - assets/audio/chords/

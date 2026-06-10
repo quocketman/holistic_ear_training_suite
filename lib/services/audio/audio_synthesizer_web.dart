@@ -1,3 +1,5 @@
+import 'dart:js_interop';
+
 import 'package:web/web.dart' as web;
 import 'audio_synthesizer.dart';
 import '../../models/synth_parameters.dart';
@@ -80,6 +82,19 @@ class AudioSynthesizerImpl implements AudioSynthesizer {
     }
   }
 
+  /// Safari (and Chrome since 2018) create AudioContext in 'suspended'
+  /// state until a user gesture explicitly resumes it. Our context is
+  /// created in main(), well before any gesture, so we always call resume
+  /// on the first audible interaction. resume() is idempotent.
+  Future<void> _ensureResumed(web.AudioContext ctx) async {
+    if (ctx.state != 'suspended') return;
+    try {
+      await ctx.resume().toDart;
+    } catch (e) {
+      print('AudioContext resume failed: $e');
+    }
+  }
+
   @override
   Future<NoteHandle> noteOn(double frequency, SynthParameters params) async {
     if (!_isInitialized || _audioContext == null) {
@@ -87,6 +102,7 @@ class AudioSynthesizerImpl implements AudioSynthesizer {
     }
 
     final ctx = _audioContext!;
+    await _ensureResumed(ctx);
     final currentTime = ctx.currentTime;
 
     // Get ADSR values from params
