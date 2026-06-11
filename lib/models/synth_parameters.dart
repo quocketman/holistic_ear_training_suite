@@ -6,18 +6,21 @@ enum OscillatorType { sine, square, triangle }
 /// Model class for synthesizer parameters
 /// Uses ChangeNotifier for reactive UI updates
 class SynthParameters extends ChangeNotifier {
+  // Whiteboard launch defaults (Hans's tuned sound, 2026-06-11).
+  // To tweak later: edit both these field initializers AND `reset()`.
+
   // Oscillator
-  OscillatorType _oscillatorType = OscillatorType.sine;
+  OscillatorType _oscillatorType = OscillatorType.triangle;
 
   // Filter (0.0 to 1.0 normalized)
-  double _filterCutoff = 1.0; // Full open
-  double _filterResonance = 0.0; // No resonance
+  double _filterCutoff = 0.12;
+  double _filterResonance = 0.0;
 
   // ADSR Envelope (in seconds, except sustain which is 0-1)
   double _attack = 0.02;
-  double _decay = 0.1;
+  double _decay = 0.10;
   double _sustain = 0.7;
-  double _release = 0.3;
+  double _release = 0.38;
 
   // Getters
   OscillatorType get oscillatorType => _oscillatorType;
@@ -84,15 +87,15 @@ class SynthParameters extends ChangeNotifier {
     }
   }
 
-  /// Reset to default values
+  /// Reset to the Whiteboard launch defaults.
   void reset() {
-    _oscillatorType = OscillatorType.sine;
-    _filterCutoff = 1.0;
+    _oscillatorType = OscillatorType.triangle;
+    _filterCutoff = 0.12;
     _filterResonance = 0.0;
     _attack = 0.02;
-    _decay = 0.1;
+    _decay = 0.10;
     _sustain = 0.7;
-    _release = 0.3;
+    _release = 0.38;
     notifyListeners();
   }
 

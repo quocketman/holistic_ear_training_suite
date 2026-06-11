@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -9,6 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../models/enums.dart';
 import '../models/musical_state.dart';
+import '../models/synth_parameters.dart';
 import '../models/tone_token_colors.dart';
 import '../services/audio_service.dart';
 import '../services/pdf_export.dart';
@@ -16,6 +18,7 @@ import '../services/signup_service.dart';
 import '../services/url_state.dart';
 import '../utils/solfege_parser.dart';
 import '../widgets/solfege_highlight_controller.dart';
+import 'sound_design_screen.dart';
 import '../widgets/whiteboard_canvas.dart';
 
 class WhiteboardScreen extends StatefulWidget {
@@ -47,6 +50,11 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
   // area as an overlay on the canvas, so users can read the directions while
   // typing.
   bool _isHelpVisible = false;
+  // Arrow-key play state. Arrow keys step through pitched notes; each step
+  // fires a note that auto-releases after _kPlayHoldMs. -1 = no playhead.
+  int _playIndex = -1;
+  final _playFocusNode = FocusNode(debugLabel: 'whiteboard-play');
+
   // Bottom signup banner — persistent across the app.
   final _signupEmailController = TextEditingController();
   final _signupEmailFocus = FocusNode();
@@ -107,6 +115,7 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
     _signupEmailController.dispose();
     _signupEmailFocus.dispose();
     _signupFeedbackTimer?.cancel();
+    _playFocusNode.dispose();
     super.dispose();
   }
 
@@ -133,6 +142,12 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
   void _onNoteUp(int index) {
     final handle = _activeNotes.remove(index);
     handle?.release();
+    // Releasing a tap also engages arrow-play from that point — focus the
+    // body so the next ← / → routes to _onPlayKey.
+    if (!_parsed.notes[index].isSpacer && !_parsed.notes[index].isLyricOnly) {
+      setState(() => _playIndex = index);
+      _playFocusNode.requestFocus();
+    }
   }
 
   void _onInputChanged(String value) {
@@ -276,10 +291,107 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
     );
   }
 
+  // ── Play (arrow-key stepping) ─────────────────────────────────────────
+
+  /// Returns the index of the next/prev pitched note from [from], stepping
+  /// by [delta] (+1 forward, -1 back). Skips spacers and lyric-only notes.
+  /// Returns null if no further pitched note exists in that direction.
+  int? _nextPitchedIndex(int from, int delta) {
+    var i = from + delta;
+    while (i >= 0 && i < _parsed.notes.length) {
+      final n = _parsed.notes[i];
+      if (!n.isSpacer && !n.isLyricOnly) return i;
+      i += delta;
+    }
+    return null;
+  }
+
+  /// Mirrors the user's sound design but with a snappier release so a
+  /// previous note doesn't bleed through several rhythm beats while the
+  /// next one starts. Fresh instance each step so we can't accidentally
+  /// stomp the global params.
+  SynthParameters _playParams() {
+    final g = AudioService.globalSynthParams;
+    return SynthParameters()
+      ..oscillatorType = g.oscillatorType
+      ..filterCutoff = g.filterCutoff
+      ..filterResonance = g.filterResonance
+      ..attack = g.attack
+      ..decay = g.decay
+      ..sustain = g.sustain
+      ..release = 0.05; // snappy
+  }
+
+  /// Each arrow press fires a note and schedules its release exactly
+  /// [_kPlayHoldMs] later. Notes are independent — rapid arrowing produces
+  /// overlapping sustains, which sounds natural for legato playing. No
+  /// cross-step handle tracking required.
+  static const int _kPlayHoldMs = 500;
+
+  Future<void> _stepPlay(int delta) async {
+    final target = _nextPitchedIndex(_playIndex, delta);
+    if (target == null) {
+      // Stepped past the boundary. Park the playhead *outside* the valid
+      // range so:
+      //   • the glow on the just-vacated token releases (no index matches)
+      //   • the opposite arrow finds the last in-range note via
+      //     _nextPitchedIndex and re-plays it as the first note back.
+      final outOfBounds = delta > 0 ? _parsed.notes.length : -1;
+      if (_playIndex != outOfBounds) {
+        setState(() => _playIndex = outOfBounds);
+      }
+      return;
+    }
+    setState(() => _playIndex = target);
+
+    final note = _parsed.notes[target];
+    final tonic = context.read<MusicalState>().currentTonic;
+    final midi = tonic + note.chromaticOffset + note.octave * 12;
+    if (midi < 0 || midi > 127) return;
+
+    final handle = await _audioService.noteOn(midi, params: _playParams());
+    if (handle == null) return;
+
+    Future.delayed(const Duration(milliseconds: _kPlayHoldMs), handle.release);
+  }
+
+  /// PLAY button — primes the playhead before the first note and grabs
+  /// keyboard focus so the next ↦ arrow press fires note #1.
+  void _onPlay() {
+    if (_parsed.notes.isEmpty) return;
+    setState(() => _playIndex = -1);
+    _playFocusNode.requestFocus();
+  }
+
+  KeyEventResult _onPlayKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
+      _stepPlay(1);
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+      _stepPlay(-1);
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
   // ── AppBar action handlers ─────────────────────────────────────────────
 
   Future<void> _openTuneIndigo() async {
     await launchUrl(Uri.parse('https://tuneindigo.com'));
+  }
+
+  // ignore: unused_element — kept ready for the Sound Design re-enable.
+  void _openSoundDesign() {
+    // Opens the existing sound-design screen. Its edits land directly on
+    // AudioService.globalSynthParams, so the Whiteboard's tones inherit
+    // the new sound design as soon as the user comes back.
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const SoundDesignScreen()),
+    );
   }
 
   Future<void> _openVideo() async {
@@ -610,7 +722,7 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
         title: const Text('Tune Indigo Whiteboard'),
         centerTitle: true,
         automaticallyImplyLeading: false,
-        leadingWidth: 220,
+        leadingWidth: 270,
         leading: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -635,11 +747,17 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
             ),
             _buildKeyPicker(),
             _buildOctavePicker(),
-            // PLAY — greyed out for now. Real keyboard-arrow step-through
-            // playback lands as the next feature.
+            // PLAY — primes the keyboard playhead. Arrow keys advance/back.
+            IconButton(
+              icon: const Icon(Icons.play_arrow_outlined),
+              tooltip: 'Play — use ← → to step through notes',
+              onPressed: _parsed.notes.isEmpty ? null : _onPlay,
+            ),
+            // Sound Design lives with the audio controls. Disabled while
+            // the feature is teased; re-enable by flipping onPressed back.
             const IconButton(
-              icon: Icon(Icons.play_arrow_outlined),
-              tooltip: 'Play (coming soon)',
+              icon: _KnobIcon(),
+              tooltip: 'Sound design (coming soon)',
               onPressed: null,
             ),
           ],
@@ -699,7 +817,20 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
           const SizedBox(width: 4),
         ],
       ),
-      body: Stack(
+      body: Focus(
+        focusNode: _playFocusNode,
+        // Arrow keys route here only while this node has focus. When the
+        // user clicks a TextField, focus moves there (and arrows move the
+        // cursor as expected). Use the focus-change callback to clear the
+        // playhead so the GLOW doesn't linger on an inactive note.
+        onKeyEvent: _onPlayKey,
+        onFocusChange: (hasFocus) {
+          if (hasFocus || _playIndex < 0) return;
+          // TextField gained focus — clear the visible playhead. Any
+          // sounding note will time out via its own auto-release.
+          setState(() => _playIndex = -1);
+        },
+        child: Stack(
         clipBehavior: Clip.hardEdge,
         children: [
           Column(
@@ -778,6 +909,7 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
                         justify: _justify,
                         onNoteDown: _onNoteDown,
                         onNoteUp: _onNoteUp,
+                        playingIndex: _playIndex,
                       ),
                     ),
                     // Help panel — slides in from the right edge of the
@@ -828,6 +960,7 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
             ),
           ),
         ],
+      ),
       ),
     );
   }
@@ -1211,4 +1344,46 @@ class _WelcomeModal extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Rotary-knob glyph for the Sound Design AppBar action — a hollow circle
+/// with a short indicator tick at the 12-o'clock position. Colour inherits
+/// from the surrounding `IconTheme`, so it matches the AppBar's foreground.
+class _KnobIcon extends StatelessWidget {
+  const _KnobIcon();
+
+  @override
+  Widget build(BuildContext context) {
+    final color = IconTheme.of(context).color ?? Colors.white;
+    return CustomPaint(
+      size: const Size(22, 22),
+      painter: _KnobPainter(color: color),
+    );
+  }
+}
+
+class _KnobPainter extends CustomPainter {
+  final Color color;
+  const _KnobPainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final stroke = size.width * 0.09;
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke
+      ..strokeCap = StrokeCap.round;
+
+    final radius = (size.width / 2) - (stroke / 2) - 0.5;
+    canvas.drawCircle(size.center(Offset.zero), radius, paint);
+
+    // Indicator tick at 12 o'clock — sits just inside the ring.
+    final tickStart = Offset(size.width / 2, stroke + 1);
+    final tickEnd = Offset(size.width / 2, size.height * 0.30);
+    canvas.drawLine(tickStart, tickEnd, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _KnobPainter old) => old.color != color;
 }

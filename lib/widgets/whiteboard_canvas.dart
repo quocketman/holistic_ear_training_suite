@@ -55,6 +55,11 @@ class WhiteboardCanvas extends StatefulWidget {
   final void Function(int index)? onNoteDown;
   final void Function(int index)? onNoteUp;
 
+  /// Index of the note currently sounding via the arrow-key play loop
+  /// (-1 / null = nothing playing). The matching token renders with the
+  /// GLOW state so viewers see the playhead advance.
+  final int? playingIndex;
+
   const WhiteboardCanvas({
     super.key,
     required this.notes,
@@ -65,6 +70,7 @@ class WhiteboardCanvas extends StatefulWidget {
     this.justify = CanvasJustify.left,
     this.onNoteDown,
     this.onNoteUp,
+    this.playingIndex,
   });
 
   @override
@@ -280,10 +286,15 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
       // Pitched notes get a hex token; lyric-only notes render just their
       // lyric text at the same anchor.
       if (!n.isLyricOnly) {
+        // Glow when this is the arrow-play playhead, OR while a finger is
+        // touching/dragging this token. Both surfaces share a single state.
+        final isGlowing = widget.playingIndex == i ||
+            (_interactive && i == _activeIndex);
         Widget tokenContent = SolfegeHexToken(
           label: n.syllable,
           chromaticOffset: n.chromaticOffset,
           size: ts,
+          state: isGlowing ? SolfegeHexState.glow : SolfegeHexState.dark,
         );
         // In vertical mode, rotate the tile 90° clockwise so the hex shape
         // and label rotate together with the layout.
