@@ -40,6 +40,10 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
   late final SolfegeHighlightController _controller;
   late final TextEditingController _titleController;
   final _canvasKey = GlobalKey();
+  // Lets the screen reach into the on-screen preview canvas to read a
+  // token's position when the arrow-play playhead moves, so we can keep
+  // it scrolled into view.
+  final _previewCanvasKey = GlobalKey<WhiteboardCanvasState>();
   final AudioService _audioService = AudioService();
   final Map<int, NoteHandle> _activeNotes = {};
   // Controls the horizontal scroll position of the canvas viewport. After
@@ -53,6 +57,10 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
   // Arrow-key play state. Arrow keys step through pitched notes; each step
   // fires a note that auto-releases after _kPlayHoldMs. -1 = no playhead.
   int _playIndex = -1;
+  // True while the body Focus has play focus (i.e. user pressed PLAY or
+  // released a tap). Used to show on-screen arrow buttons on narrow
+  // viewports where a hardware keyboard isn't available.
+  bool _playEngaged = false;
   final _playFocusNode = FocusNode(debugLabel: 'whiteboard-play');
 
   // Bottom signup banner — persistent across the app.
@@ -85,6 +93,12 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
     if (initialText.isNotEmpty) {
       _parsed = SolfegeParser.parse(initialText);
     }
+    // Watch play-focus directly. The Focus widget's onFocusChange callback
+    // tracks hasFocus, which stays true while a descendant (a TextField)
+    // owns focus — so it doesn't fire when the user taps into the input.
+    // The FocusNode listener fires on hasPrimaryFocus changes, which IS
+    // the signal we want: "are we the active recipient of arrow keys?"
+    _playFocusNode.addListener(_onPlayFocusChanged);
     // Show the welcome modal once per browser tab — first paint after build.
     if (!_welcomeShown) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -115,6 +129,7 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
     _signupEmailController.dispose();
     _signupEmailFocus.dispose();
     _signupFeedbackTimer?.cancel();
+    _playFocusNode.removeListener(_onPlayFocusChanged);
     _playFocusNode.dispose();
     super.dispose();
   }
@@ -143,9 +158,13 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
     final handle = _activeNotes.remove(index);
     handle?.release();
     // Releasing a tap also engages arrow-play from that point — focus the
-    // body so the next ← / → routes to _onPlayKey.
+    // body so the next ← / → routes to _onPlayKey, and surface the
+    // on-screen arrow buttons for touch users.
     if (!_parsed.notes[index].isSpacer && !_parsed.notes[index].isLyricOnly) {
-      setState(() => _playIndex = index);
+      setState(() {
+        _playIndex = index;
+        _playEngaged = true;
+      });
       _playFocusNode.requestFocus();
     }
   }
@@ -306,6 +325,54 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
     return null;
   }
 
+  /// Fires whenever the play-focus node's focus state changes — including
+  /// when primary focus moves to a TextField inside the body subtree.
+  /// When we lose primary focus, dismiss the playhead glow and the
+  /// on-screen step buttons.
+  void _onPlayFocusChanged() {
+    if (_playFocusNode.hasPrimaryFocus) return;
+    if (_playIndex < 0 && !_playEngaged) return;
+    setState(() {
+      _playIndex = -1;
+      _playEngaged = false;
+    });
+  }
+
+  /// Scrolls the horizontal canvas viewport so the currently-playing
+  /// token sits comfortably inside it. No-op when the token is already
+  /// visible — we don't want chasing scroll for tokens already on-screen.
+  void _scrollToPlayingToken() {
+    if (_playIndex < 0 || _playIndex >= _parsed.notes.length) return;
+    if (!_canvasScrollController.hasClients) return;
+    final pos = _previewCanvasKey.currentState?.tokenPosition(_playIndex);
+    if (pos == null) return;
+
+    final position = _canvasScrollController.position;
+    final viewport = position.viewportDimension;
+    final current = _canvasScrollController.offset;
+    final tokenX = pos.dx;
+    // Comfort padding so the playhead doesn't sit pressed against the
+    // viewport edge (where the on-screen step buttons live).
+    const edgePad = 96.0;
+
+    double? target;
+    if (tokenX < current + edgePad) {
+      // Off-screen left (or too close to the left edge).
+      target = tokenX - viewport * 0.3;
+    } else if (tokenX > current + viewport - edgePad) {
+      // Off-screen right (or too close to the right edge).
+      target = tokenX - viewport * 0.7;
+    }
+    if (target == null) return;
+
+    final clamped = target.clamp(0.0, position.maxScrollExtent);
+    _canvasScrollController.animateTo(
+      clamped,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOut,
+    );
+  }
+
   /// Mirrors the user's sound design but with a snappier release so a
   /// previous note doesn't bleed through several rhythm beats while the
   /// next one starts. Fresh instance each step so we can't accidentally
@@ -343,6 +410,11 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
       return;
     }
     setState(() => _playIndex = target);
+    // After the canvas redraws with the new playhead, scroll the
+    // horizontal viewport so the active token stays in view.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scrollToPlayingToken();
+    });
 
     final note = _parsed.notes[target];
     final tonic = context.read<MusicalState>().currentTonic;
@@ -359,11 +431,21 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
   /// keyboard focus so the next ↦ arrow press fires note #1.
   void _onPlay() {
     if (_parsed.notes.isEmpty) return;
-    setState(() => _playIndex = -1);
+    setState(() {
+      _playIndex = -1;
+      _playEngaged = true;
+    });
     _playFocusNode.requestFocus();
   }
 
   KeyEventResult _onPlayKey(FocusNode node, KeyEvent event) {
+    // The body Focus widget receives bubbled key events from focused
+    // descendants too (e.g. a TextField hands ← / → back if the cursor
+    // is at a boundary). Only act when arrow-play is actually engaged
+    // AND we hold primary focus — otherwise let the event keep bubbling.
+    if (!_playEngaged || !_playFocusNode.hasPrimaryFocus) {
+      return KeyEventResult.ignored;
+    }
     if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
       return KeyEventResult.ignored;
     }
@@ -714,6 +796,12 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
     // "so" (Blue, #3F55C7) — chromatic offset 7. AppBar uses this; the
     // bottom signup banner mirrors it so chrome reads as one cohesive frame.
     final chromeColor = ToneTokenColors.getColor(7);
+    // Phones + small tablet windows get a stripped-down AppBar — non-
+    // essential placeholders and the "watch intro" link drop out so the
+    // visible icons don't overlap. 900 px catches phone-landscape and
+    // narrow-window desktop testing without affecting the typical
+    // full-screen desktop view.
+    final isNarrow = MediaQuery.of(context).size.width < 900;
     return Scaffold(
       bottomNavigationBar: _buildSignupBanner(),
       appBar: AppBar(
@@ -777,16 +865,18 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
             tooltip: 'Download PDF',
             onPressed: _parsed.notes.isEmpty || _exporting ? null : _downloadPdf,
           ),
-          IconButton(
-            icon: const Icon(Icons.share_outlined),
-            tooltip: 'Share',
-            onPressed: _onShare,
-          ),
-          const IconButton(
-            icon: Icon(Icons.save_outlined),
-            tooltip: 'Save (coming soon)',
-            onPressed: null,
-          ),
+          if (!isNarrow)
+            IconButton(
+              icon: const Icon(Icons.share_outlined),
+              tooltip: 'Share',
+              onPressed: _onShare,
+            ),
+          if (!isNarrow)
+            const IconButton(
+              icon: Icon(Icons.save_outlined),
+              tooltip: 'Save (coming soon)',
+              onPressed: null,
+            ),
           IconButton(
             icon: const Icon(Icons.delete_sweep_outlined),
             tooltip: 'Clear',
@@ -799,11 +889,12 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
             tooltip: 'How to use',
             onPressed: _onShowHelp,
           ),
-          IconButton(
-            icon: const Icon(Icons.smart_display_outlined),
-            tooltip: 'Watch intro',
-            onPressed: _openVideo,
-          ),
+          if (!isNarrow)
+            IconButton(
+              icon: const Icon(Icons.smart_display_outlined),
+              tooltip: 'Watch intro',
+              onPressed: _openVideo,
+            ),
           IconButton(
             icon: const Icon(Icons.email_outlined),
             tooltip: 'Subscribe to updates',
@@ -819,17 +910,12 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
       ),
       body: Focus(
         focusNode: _playFocusNode,
-        // Arrow keys route here only while this node has focus. When the
-        // user clicks a TextField, focus moves there (and arrows move the
-        // cursor as expected). Use the focus-change callback to clear the
-        // playhead so the GLOW doesn't linger on an inactive note.
+        // Arrow keys route here while this node holds primary focus. The
+        // FocusNode listener (added in initState) is what dismisses the
+        // glow + on-screen arrows when a TextField takes primary focus
+        // away — onFocusChange would not fire for that case because the
+        // TextField lives inside this Focus's subtree.
         onKeyEvent: _onPlayKey,
-        onFocusChange: (hasFocus) {
-          if (hasFocus || _playIndex < 0) return;
-          // TextField gained focus — clear the visible playhead. Any
-          // sounding note will time out via its own auto-release.
-          setState(() => _playIndex = -1);
-        },
         child: Stack(
         clipBehavior: Clip.hardEdge,
         children: [
@@ -894,6 +980,7 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
                       scrollDirection: Axis.horizontal,
                       controller: _canvasScrollController,
                       child: WhiteboardCanvas(
+                        key: _previewCanvasKey,
                         notes: _parsed.notes,
                         layout: layout,
                         // Maximum diameter — actual size shrinks to fit
@@ -934,6 +1021,34 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
                         ),
                       ),
                     ),
+                    // On-screen step buttons during arrow-play. Always shown
+                    // when arrow-play is engaged — phones and tablets need
+                    // them (no keyboard); desktop users get an extra,
+                    // unobtrusive way to step beyond the ← / → keys.
+                    if (_playEngaged) ...[
+                      Positioned(
+                        left: 12,
+                        top: 0,
+                        bottom: 0,
+                        child: Center(
+                          child: _PlayStepButton(
+                            icon: Icons.arrow_back,
+                            onPressed: () => _stepPlay(-1),
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        right: 12,
+                        top: 0,
+                        bottom: 0,
+                        child: Center(
+                          child: _PlayStepButton(
+                            icon: Icons.arrow_forward,
+                            onPressed: () => _stepPlay(1),
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 );
               },
@@ -1386,4 +1501,52 @@ class _KnobPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _KnobPainter old) => old.color != color;
+}
+
+/// Floating circular ←/→ step button shown over the canvas during arrow-
+/// play on narrow viewports (replacing the missing keyboard). Explicit
+/// white border around a translucent dark fill so the circle reads
+/// against any underlying token, and a real arrow glyph (not a chevron)
+/// so the "step forward / step back" intent is obvious.
+class _PlayStepButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onPressed;
+  const _PlayStepButton({required this.icon, required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    return Focus(
+      // Don't steal primary focus from the play FocusNode when tapped —
+      // otherwise the listener would think the user left arrow-play mode.
+      canRequestFocus: false,
+      descendantsAreFocusable: false,
+      child: Container(
+        width: 64,
+        height: 64,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: Colors.black.withValues(alpha: 0.55),
+          border: Border.all(color: Colors.white, width: 2),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.35),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Material(
+          color: Colors.transparent,
+          shape: const CircleBorder(),
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: onPressed,
+            child: Center(
+              child: Icon(icon, color: Colors.white, size: 30),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }

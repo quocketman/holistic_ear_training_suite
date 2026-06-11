@@ -74,10 +74,19 @@ class WhiteboardCanvas extends StatefulWidget {
   });
 
   @override
-  State<WhiteboardCanvas> createState() => _WhiteboardCanvasState();
+  State<WhiteboardCanvas> createState() => WhiteboardCanvasState();
 }
 
-class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
+class WhiteboardCanvasState extends State<WhiteboardCanvas> {
+  /// Cached center position of the token at [index] in canvas-local
+  /// coordinates, or null if the canvas hasn't laid out yet or the index
+  /// is out of range. Used by the screen to auto-scroll the horizontal
+  /// viewport so the arrow-play playhead stays visible.
+  Offset? tokenPosition(int index) {
+    if (index < 0 || index >= _lastPositions.length) return null;
+    return _lastPositions[index];
+  }
+
   static const double _lyricGap = 4.0;
 
   /// Index of the token currently under the active pointer (-1 = none).
