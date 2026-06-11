@@ -403,13 +403,25 @@ class WhiteboardCanvasState extends State<WhiteboardCanvas> {
         : widget.notes.isNotEmpty
             ? timeAxisLength / widget.notes.length
             : widget.tokenSize;
+    // In horizontal mode, lyrics render below each hex (font = ts × 0.45 +
+    // 2 px gap). When the pitch span is wide, the bottom token's lyric
+    // would otherwise clip past canvas.height — reserve a fraction of a
+    // token below the lowest tile so the lyric line stays inside.
+    final bool reserveLyricBelow = widget.layout == CanvasLayout.horizontal &&
+        widget.notes.any((n) => n.lyric != null && n.lyric!.isNotEmpty);
+    const double lyricReserveFactor = 0.7;
     // Decouple token size from chromatic spacing: positions step by one
     // chromaticUnit per semitone, tokens render at chromaticUnit × spread.
     // Solves for max tokenSize where:
-    //   pitchAxisLength = pitchRange × chromaticUnit + tokenSize
-    //                   = chromaticUnit × (pitchRange + spread)
-    final maxFromPitch = pitchRange > 0
-        ? pitchAxisLength * _chromaticSpread / (pitchRange + _chromaticSpread)
+    //   pitchAxisLength = pitchRange × chromaticUnit + tokenSize × (1 + R)
+    //                   = chromaticUnit × (pitchRange + spread × (1 + R))
+    // R = 0 when no lyric reservation is needed, R = lyricReserveFactor when
+    // horizontal-mode lyrics are present.
+    final double pitchDenom = pitchRange +
+        _chromaticSpread *
+            (1 + (reserveLyricBelow ? lyricReserveFactor : 0));
+    final maxFromPitch = pitchRange > 0 || reserveLyricBelow
+        ? pitchAxisLength * _chromaticSpread / pitchDenom
         : pitchAxisLength;
 
     return [widget.tokenSize, maxFromTime, maxFromPitch]
