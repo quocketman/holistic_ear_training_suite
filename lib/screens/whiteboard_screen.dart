@@ -13,12 +13,14 @@ import '../models/musical_state.dart';
 import '../models/synth_parameters.dart';
 import '../models/tone_token_colors.dart';
 import '../services/audio_service.dart';
-import '../services/pdf_export.dart';
+import '../services/pdf_export.dart' show
+    exportRepaintBoundaryToPdf, exportRepaintBoundaryToPng;
 import '../services/signup_service.dart';
 import '../services/url_state.dart';
 import '../utils/solfege_parser.dart';
 import '../widgets/solfege_highlight_controller.dart';
 import 'sound_design_screen.dart';
+import '../widgets/solfege_hex_token.dart';
 import '../widgets/whiteboard_canvas.dart';
 
 class WhiteboardScreen extends StatefulWidget {
@@ -33,6 +35,7 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
   static String _persistedSolfege = '';
   static String _persistedTitle = '';
   static CanvasJustify _persistedJustify = CanvasJustify.left;
+  static SolfegeHexTheme _persistedTheme = SolfegeHexTheme.dark;
   // Session-scoped — resets on page reload. Suppresses the welcome modal
   // after the user has dismissed it once in this browser tab.
   static bool _welcomeShown = false;
@@ -76,7 +79,12 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
     unrecognized: [],
   );
   CanvasJustify _justify = CanvasJustify.left;
+  SolfegeHexTheme _theme = SolfegeHexTheme.dark;
   bool _exporting = false;
+  // While true, the off-screen export canvas renders with the light theme
+  // regardless of `_theme`. Set transiently around a PDF download so the
+  // print-bound output is always on a white background.
+  bool _forceExportLight = false;
 
   @override
   void initState() {
@@ -90,6 +98,7 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
     _controller = SolfegeHighlightController(text: initialText);
     _titleController = TextEditingController(text: _persistedTitle);
     _justify = _persistedJustify;
+    _theme = _persistedTheme;
     if (initialText.isNotEmpty) {
       _parsed = SolfegeParser.parse(initialText);
     }
@@ -118,6 +127,7 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
     _persistedSolfege = _controller.text;
     _persistedTitle = _titleController.text;
     _persistedJustify = _justify;
+    _persistedTheme = _theme;
     for (final h in _activeNotes.values) {
       h.release();
     }
@@ -199,22 +209,31 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
     return CanvasLayout.horizontal;
   }
 
-  Future<void> _downloadPdf() async {
+  String _exportFilenamePrefix() {
+    final title = _titleController.text.trim();
+    return title.isNotEmpty
+        ? title
+            .replaceAll(RegExp(r'[^\w\s-]'), '')
+            .replaceAll(RegExp(r'\s+'), '_')
+        : 'whiteboard';
+  }
+
+  /// Common pre/post around a capture — toggles the off-screen canvas to
+  /// the requested theme (PDF forces light for print) and waits a frame so
+  /// the RepaintBoundary repaints before [run] captures it.
+  Future<void> _runExport({
+    required bool forceLight,
+    required Future<String> Function() run,
+  }) async {
     if (_parsed.notes.isEmpty || _exporting) return;
-    setState(() => _exporting = true);
+    setState(() {
+      _exporting = true;
+      _forceExportLight = forceLight;
+    });
+    // One frame for the export canvas to repaint with the forced theme.
+    await WidgetsBinding.instance.endOfFrame;
     try {
-      final title = _titleController.text.trim();
-      final prefix = title.isNotEmpty
-          ? title
-              .replaceAll(RegExp(r'[^\w\s-]'), '')
-              .replaceAll(RegExp(r'\s+'), '_')
-          : 'whiteboard';
-      final destination = await exportRepaintBoundaryToPdf(
-        boundaryKey: _canvasKey,
-        filenamePrefix: prefix,
-        title: title,
-        solfegeText: _controller.text,
-      );
+      final destination = await run();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Saved: $destination')),
@@ -228,9 +247,32 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
         );
       }
     } finally {
-      if (mounted) setState(() => _exporting = false);
+      if (mounted) {
+        setState(() {
+          _exporting = false;
+          _forceExportLight = false;
+        });
+      }
     }
   }
+
+  Future<void> _downloadPdf() => _runExport(
+        forceLight: true,
+        run: () => exportRepaintBoundaryToPdf(
+          boundaryKey: _canvasKey,
+          filenamePrefix: _exportFilenamePrefix(),
+          title: _titleController.text.trim(),
+          solfegeText: _controller.text,
+        ),
+      );
+
+  Future<void> _downloadPng() => _runExport(
+        forceLight: false,
+        run: () => exportRepaintBoundaryToPng(
+          boundaryKey: _canvasKey,
+          filenamePrefix: _exportFilenamePrefix(),
+        ),
+      );
 
   // ── KEY + OCTAVE pickers (live in the AppBar leading row) ─────────────
 
@@ -319,7 +361,7 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
     var i = from + delta;
     while (i >= 0 && i < _parsed.notes.length) {
       final n = _parsed.notes[i];
-      if (!n.isSpacer && !n.isLyricOnly) return i;
+      if (!n.isSpacer && !n.isLyricOnly && !n.isLineBreak) return i;
       i += delta;
     }
     return null;
@@ -523,6 +565,15 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
         case CanvasJustify.right:
           _justify = CanvasJustify.left;
       }
+    });
+  }
+
+  void _toggleTheme() {
+    setState(() {
+      _theme = _theme == SolfegeHexTheme.dark
+          ? SolfegeHexTheme.light
+          : SolfegeHexTheme.dark;
+      _persistedTheme = _theme;
     });
   }
 
@@ -774,6 +825,13 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
                   'Place | at the beginning and ending of the group.',
               example: '| do mi so |',
             ),
+            const _HelpItem(
+              text: 'Line break (PDF + share)',
+              sub:
+                  'Splits the music into stacked rows when you download or share. '
+                  'The on-screen editor stays one continuous line.',
+              example: 'do re mi || fa so la',
+            ),
       ],
     );
   }
@@ -851,7 +909,9 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
           ],
         ),
         actions: [
-          IconButton(
+          PopupMenuButton<String>(
+            tooltip: 'Download',
+            enabled: !(_parsed.notes.isEmpty || _exporting),
             icon: _exporting
                 ? const SizedBox(
                     width: 20,
@@ -862,8 +922,32 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
                     ),
                   )
                 : const Icon(Icons.file_download_outlined),
-            tooltip: 'Download PDF',
-            onPressed: _parsed.notes.isEmpty || _exporting ? null : _downloadPdf,
+            onSelected: (value) {
+              switch (value) {
+                case 'pdf':
+                  _downloadPdf();
+                case 'png':
+                  _downloadPng();
+              }
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(
+                value: 'pdf',
+                child: ListTile(
+                  dense: true,
+                  leading: Icon(Icons.picture_as_pdf_outlined),
+                  title: Text('PDF (white background, print-ready)'),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'png',
+                child: ListTile(
+                  dense: true,
+                  leading: Icon(Icons.image_outlined),
+                  title: Text('PNG image (matches current theme)'),
+                ),
+              ),
+            ],
           ),
           if (!isNarrow)
             IconButton(
@@ -904,6 +988,15 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
             icon: Icon(_justifyIcon),
             tooltip: 'Align ($_justifyLabel)',
             onPressed: _cycleJustify,
+          ),
+          IconButton(
+            icon: Icon(_theme == SolfegeHexTheme.dark
+                ? Icons.light_mode_outlined
+                : Icons.dark_mode_outlined),
+            tooltip: _theme == SolfegeHexTheme.dark
+                ? 'Switch to white background'
+                : 'Switch to black background',
+            onPressed: _toggleTheme,
           ),
           const SizedBox(width: 4),
         ],
@@ -997,6 +1090,7 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
                         onNoteDown: _onNoteDown,
                         onNoteUp: _onNoteUp,
                         playingIndex: _playIndex,
+                        theme: _theme,
                       ),
                     ),
                     // Help panel — slides in from the right edge of the
@@ -1071,6 +1165,8 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
                 layout: layout,
                 title: _titleController.text.trim(),
                 justify: _justify,
+                theme: _forceExportLight ? SolfegeHexTheme.light : _theme,
+                respectLineBreaks: true,
               ),
             ),
           ),

@@ -21,6 +21,15 @@ enum CanvasJustify { left, center, right }
 /// Increase for tighter visuals at wide pitch ranges.
 const double _chromaticSpread = 1.5;
 
+/// Multi-row "system band" between adjacent rows. The band is empty space
+/// reserved between rows in multi-row exports; the visible separator bar
+/// paints in the middle slice. All factors are in units of token size, so
+/// the band scales with how big the tokens land.
+const double _systemBarThicknessFactor = 0.5;
+const double _systemBarPadFactor = 1.0; // padding above AND below the bar
+const double _systemBandFactor =
+    _systemBarThicknessFactor + 2 * _systemBarPadFactor;
+
 extension CanvasLayoutSize on CanvasLayout {
   /// Content area (excluding title).
   Size get contentSize => switch (this) {
@@ -60,6 +69,16 @@ class WhiteboardCanvas extends StatefulWidget {
   /// GLOW state so viewers see the playhead advance.
   final int? playingIndex;
 
+  /// Dark = black bg, white text. Light = white bg, black text. Tokens
+  /// invert their dark/glow fill accordingly.
+  final SolfegeHexTheme theme;
+
+  /// When true, the standalone `||` token splits notes into stacked rows
+  /// (sheet-music style). When false (default), line-break markers render
+  /// as nothing and the layout stays single-row — the right behavior for
+  /// the live horizontal-scroll editor.
+  final bool respectLineBreaks;
+
   const WhiteboardCanvas({
     super.key,
     required this.notes,
@@ -71,6 +90,8 @@ class WhiteboardCanvas extends StatefulWidget {
     this.onNoteDown,
     this.onNoteUp,
     this.playingIndex,
+    this.theme = SolfegeHexTheme.dark,
+    this.respectLineBreaks = false,
   });
 
   @override
@@ -102,13 +123,58 @@ class WhiteboardCanvasState extends State<WhiteboardCanvas> {
   bool get _interactive =>
       widget.onNoteDown != null || widget.onNoteUp != null;
 
-  /// Find the token index under [localPos], or -1 if none. Skips spacers.
+  /// For each note in [widget.notes], returns its row index. Notes that are
+  /// line-break markers themselves get row -1. In single-row mode (the
+  /// default), every renderable note maps to row 0.
+  ///
+  /// Returned record: (rowCount, rowOfIndex, notesPerRow).
+  ({int rowCount, List<int> rowOfIndex, List<int> notesPerRow})
+      _rowAssignments() {
+    final rowOfIndex = List<int>.filled(widget.notes.length, 0);
+    final notesPerRow = <int>[];
+    if (!widget.respectLineBreaks) {
+      // Everyone is in row 0; spacers and lyric-only count for layout, line
+      // breaks are dropped from the count.
+      var count = 0;
+      for (final n in widget.notes) {
+        if (!n.isLineBreak) count++;
+      }
+      notesPerRow.add(count);
+      for (var i = 0; i < widget.notes.length; i++) {
+        rowOfIndex[i] = widget.notes[i].isLineBreak ? -1 : 0;
+      }
+      return (rowCount: 1, rowOfIndex: rowOfIndex, notesPerRow: notesPerRow);
+    }
+    int currentRow = 0;
+    int currentCount = 0;
+    for (var i = 0; i < widget.notes.length; i++) {
+      final n = widget.notes[i];
+      if (n.isLineBreak) {
+        notesPerRow.add(currentCount);
+        currentRow++;
+        currentCount = 0;
+        rowOfIndex[i] = -1;
+        continue;
+      }
+      rowOfIndex[i] = currentRow;
+      currentCount++;
+    }
+    notesPerRow.add(currentCount);
+    return (
+      rowCount: notesPerRow.length,
+      rowOfIndex: rowOfIndex,
+      notesPerRow: notesPerRow,
+    );
+  }
+
+  /// Find the token index under [localPos], or -1 if none. Skips spacers
+  /// and line-break markers.
   int _hitTest(Offset localPos) {
     if (_lastPositions.isEmpty || _lastTokenSize == 0) return -1;
     final r = _lastTokenSize / 2 * 0.95;
     final r2 = r * r;
     for (var i = 0; i < widget.notes.length && i < _lastPositions.length; i++) {
-      if (widget.notes[i].isSpacer) continue;
+      if (widget.notes[i].isSpacer || widget.notes[i].isLineBreak) continue;
       final c = _lastPositions[i];
       final dx = localPos.dx - c.dx;
       final dy = localPos.dy - c.dy;
@@ -166,6 +232,9 @@ class WhiteboardCanvasState extends State<WhiteboardCanvas> {
     final titleFontSize = isPreview ? 20.0 : 48.0;
     final titleAreaHeight = isPreview ? 30.0 : widget.layout.titleHeight;
     final hasTitle = widget.title != null && widget.title!.isNotEmpty;
+    final isLightTheme = widget.theme == SolfegeHexTheme.light;
+    final bgColor = isLightTheme ? Colors.white : Colors.black;
+    final fgColor = isLightTheme ? Colors.black : Colors.white;
 
     // In preview mode the canvas can extend beyond the viewport rightward —
     // the parent SingleChildScrollView handles horizontal panning. Take the
@@ -177,7 +246,7 @@ class WhiteboardCanvasState extends State<WhiteboardCanvas> {
       final lyricStyle = GoogleFonts.sourceSans3(
         fontSize: ts * 0.45,
         fontWeight: FontWeight.w500,
-        color: Colors.white,
+        color: fgColor,
         height: 1.0,
       );
       final natural = _naturalContentWidth(ts, lyricStyle, true);
@@ -189,7 +258,7 @@ class WhiteboardCanvasState extends State<WhiteboardCanvas> {
     final canvas = Container(
       width: size.width,
       height: size.height,
-      color: Colors.black,
+      color: bgColor,
       child: Stack(
         children: [
           if (hasTitle)
@@ -203,11 +272,11 @@ class WhiteboardCanvasState extends State<WhiteboardCanvas> {
                 style: GoogleFonts.sourceSans3(
                   fontSize: titleFontSize,
                   fontWeight: FontWeight.bold,
-                  color: Colors.white,
+                  color: fgColor,
                 ),
               ),
             ),
-          ..._buildContent(size, hasTitle ? titleAreaHeight : 0),
+          ..._buildContent(size, hasTitle ? titleAreaHeight : 0, isLightTheme),
         ],
       ),
     );
@@ -226,7 +295,7 @@ class WhiteboardCanvasState extends State<WhiteboardCanvas> {
 
   /// Build tokens and lyrics, layered correctly.
   /// Caches positions and token size for pointer hit-testing.
-  List<Widget> _buildContent(Size canvas, double titleOffset) {
+  List<Widget> _buildContent(Size canvas, double titleOffset, bool isLightTheme) {
     if (widget.notes.isEmpty) {
       _lastPositions = const [];
       _lastTokenSize = 0;
@@ -235,10 +304,11 @@ class WhiteboardCanvasState extends State<WhiteboardCanvas> {
 
     final isPreview = widget.fitToSize != null;
     final ts = _effectiveTokenSize(canvas, titleOffset);
+    final fgColor = isLightTheme ? Colors.black : Colors.white;
     final lyricStyle = GoogleFonts.sourceSans3(
       fontSize: ts * 0.45,
       fontWeight: FontWeight.w500,
-      color: Colors.white,
+      color: fgColor,
       height: 1.0,
     );
     final positions =
@@ -252,13 +322,52 @@ class WhiteboardCanvasState extends State<WhiteboardCanvas> {
     final lyrics = <Widget>[];
     final isVertical = widget.layout == CanvasLayout.vertical;
 
+    // System separators — bars between rows in multi-row exports. The
+    // band reserved between rows is ts × _systemBandFactor; the visible
+    // bar paints in the middle ts × _systemBarThicknessFactor slice.
+    // Skipped in single-row mode and in vertical layout (the notion of
+    // "system" is a horizontal-music convention).
+    final systemBars = <Widget>[];
+    final rows = _rowAssignments();
+    if (widget.respectLineBreaks && rows.rowCount > 1 && !isVertical) {
+      final margin = isPreview ? 20.0 : 80.0;
+      final fullAxisLength = canvas.height - titleOffset - margin * 2;
+      final bandHeight = ts * _systemBandFactor;
+      final rowHeight =
+          (fullAxisLength - (rows.rowCount - 1) * bandHeight) / rows.rowCount;
+      final barHeight = ts * _systemBarThicknessFactor;
+      final barColor = isLightTheme
+          ? Colors.black.withValues(alpha: 0.35)
+          : Colors.white.withValues(alpha: 0.35);
+      // Bar between row r (above) and row r+1 (below), centered in the band.
+      for (var r = 0; r < rows.rowCount - 1; r++) {
+        final bandTop =
+            titleOffset + margin + r * (rowHeight + bandHeight) + rowHeight;
+        final yMid = bandTop + bandHeight / 2;
+        systemBars.add(Positioned(
+          left: margin,
+          right: margin,
+          top: yMid - barHeight / 2,
+          height: barHeight,
+          child: IgnorePointer(
+            child: Container(
+              decoration: BoxDecoration(
+                color: barColor,
+                borderRadius: BorderRadius.circular(barHeight / 2),
+              ),
+            ),
+          ),
+        ));
+      }
+    }
+
     // Compute bounding rect for each group (covers tile centers, expanded
     // by half a token to enclose them, plus a little extra padding).
     final groupRects = <int, Rect>{};
     for (var i = 0; i < widget.notes.length; i++) {
       final gid = widget.notes[i].groupId;
       if (gid == null) continue;
-      if (widget.notes[i].isSpacer) continue;
+      if (widget.notes[i].isSpacer || widget.notes[i].isLineBreak) continue;
       final p = positions[i];
       final tileRect = Rect.fromCenter(center: p, width: ts, height: ts);
       groupRects[gid] = groupRects.containsKey(gid)
@@ -268,6 +377,9 @@ class WhiteboardCanvasState extends State<WhiteboardCanvas> {
     final groupBackgrounds = <Widget>[];
     final padding = ts * 0.18;
     final radius = ts * 0.35;
+    final groupTint = isLightTheme
+        ? Colors.black.withValues(alpha: 0.08)
+        : Colors.white.withValues(alpha: 0.2);
     for (final rect in groupRects.values) {
       final padded = rect.inflate(padding);
       groupBackgrounds.add(Positioned(
@@ -278,7 +390,7 @@ class WhiteboardCanvasState extends State<WhiteboardCanvas> {
         child: IgnorePointer(
           child: Container(
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.2),
+              color: groupTint,
               borderRadius: BorderRadius.circular(radius),
             ),
           ),
@@ -288,7 +400,7 @@ class WhiteboardCanvasState extends State<WhiteboardCanvas> {
 
     for (var i = 0; i < widget.notes.length; i++) {
       final n = widget.notes[i];
-      if (n.isSpacer) continue;
+      if (n.isSpacer || n.isLineBreak) continue;
       final p = positions[i];
       final isActive = _interactive && i == _activeIndex;
 
@@ -304,6 +416,7 @@ class WhiteboardCanvasState extends State<WhiteboardCanvas> {
           chromaticOffset: n.chromaticOffset,
           size: ts,
           state: isGlowing ? SolfegeHexState.glow : SolfegeHexState.dark,
+          theme: widget.theme,
         );
         // In vertical mode, rotate the tile 90° clockwise so the hex shape
         // and label rotate together with the layout.
@@ -364,8 +477,9 @@ class WhiteboardCanvasState extends State<WhiteboardCanvas> {
         }
       }
     }
-    // Group backgrounds first (behind tokens), then tokens, then lyrics on top.
-    return [...groupBackgrounds, ...tokens, ...lyrics];
+    // System separators sit lowest, then group backgrounds (behind tokens),
+    // then tokens, then lyrics on top.
+    return [...systemBars, ...groupBackgrounds, ...tokens, ...lyrics];
   }
 
   /// Compute effective token size that fits everything in the content area.
@@ -374,7 +488,9 @@ class WhiteboardCanvasState extends State<WhiteboardCanvas> {
 
     final realChromatics = [
       for (var i = 0; i < widget.notes.length; i++)
-        if (!widget.notes[i].isSpacer && !widget.notes[i].isLyricOnly)
+        if (!widget.notes[i].isSpacer &&
+            !widget.notes[i].isLyricOnly &&
+            !widget.notes[i].isLineBreak)
           widget.notes[i].totalChromatic,
     ];
     if (realChromatics.isEmpty) return widget.tokenSize;
@@ -386,11 +502,19 @@ class WhiteboardCanvasState extends State<WhiteboardCanvas> {
     final isPreview = widget.fitToSize != null;
     final margin = isPreview ? 20.0 : 80.0;
 
+    final rows = _rowAssignments();
+    final rowCount = rows.rowCount;
+    final maxNotesPerRow = rows.notesPerRow.isEmpty
+        ? widget.notes.length
+        : rows.notesPerRow.reduce(math.max);
+
     final timeAxisLength = (widget.layout == CanvasLayout.horizontal
             ? canvas.width
             : canvas.height - titleOffset) -
         margin * 2;
-    final pitchAxisLength = (widget.layout == CanvasLayout.horizontal
+    // Full pitch axis (across all rows). In single-row mode it's the entire
+    // music area; in multi-row, rows + inter-row bands all share this.
+    final fullPitchAxisLength = (widget.layout == CanvasLayout.horizontal
             ? canvas.height - titleOffset
             : canvas.width) -
         margin * 2;
@@ -400,29 +524,37 @@ class WhiteboardCanvasState extends State<WhiteboardCanvas> {
     // In export mode (fixed-size PNG), keep the constraint.
     final maxFromTime = isPreview
         ? double.infinity
-        : widget.notes.isNotEmpty
-            ? timeAxisLength / widget.notes.length
+        : maxNotesPerRow > 0
+            ? timeAxisLength / maxNotesPerRow
             : widget.tokenSize;
     // In horizontal mode, lyrics render below each hex (font = ts × 0.45 +
     // 2 px gap). When the pitch span is wide, the bottom token's lyric
     // would otherwise clip past canvas.height — reserve a fraction of a
     // token below the lowest tile so the lyric line stays inside.
     final bool reserveLyricBelow = widget.layout == CanvasLayout.horizontal &&
-        widget.notes.any((n) => n.lyric != null && n.lyric!.isNotEmpty);
+        widget.notes.any((n) =>
+            !n.isLineBreak && n.lyric != null && n.lyric!.isNotEmpty);
     const double lyricReserveFactor = 0.7;
-    // Decouple token size from chromatic spacing: positions step by one
-    // chromaticUnit per semitone, tokens render at chromaticUnit × spread.
-    // Solves for max tokenSize where:
-    //   pitchAxisLength = pitchRange × chromaticUnit + tokenSize × (1 + R)
-    //                   = chromaticUnit × (pitchRange + spread × (1 + R))
-    // R = 0 when no lyric reservation is needed, R = lyricReserveFactor when
-    // horizontal-mode lyrics are present.
-    final double pitchDenom = pitchRange +
+    // Multi-row horizontal exports reserve a system band between rows.
+    // bandHeight = ts × _systemBandFactor; the joint pitch-axis constraint is:
+    //   rowCount × (pitchRange × ts/spread + ts × (1+R))
+    //     + (rowCount-1) × ts × _systemBandFactor
+    //   = fullPitchAxisLength
+    // → ts × [rowCount × (pitchRange + spread × (1+R))
+    //         + spread × (rowCount-1) × _systemBandFactor]
+    //   = fullPitchAxisLength × spread
+    final bool reserveBands = widget.respectLineBreaks &&
+        rowCount > 1 &&
+        widget.layout == CanvasLayout.horizontal;
+    final double pitchDenom = rowCount *
+            (pitchRange +
+                _chromaticSpread *
+                    (1 + (reserveLyricBelow ? lyricReserveFactor : 0))) +
         _chromaticSpread *
-            (1 + (reserveLyricBelow ? lyricReserveFactor : 0));
-    final maxFromPitch = pitchRange > 0 || reserveLyricBelow
-        ? pitchAxisLength * _chromaticSpread / pitchDenom
-        : pitchAxisLength;
+            (reserveBands ? (rowCount - 1) * _systemBandFactor : 0);
+    final maxFromPitch = pitchRange > 0 || reserveLyricBelow || reserveBands
+        ? fullPitchAxisLength * _chromaticSpread / pitchDenom
+        : fullPitchAxisLength;
 
     return [widget.tokenSize, maxFromTime, maxFromPitch]
         .reduce((a, b) => a < b ? a : b);
@@ -479,7 +611,11 @@ class WhiteboardCanvasState extends State<WhiteboardCanvas> {
     final margin = isPreview ? 20.0 : 80.0;
     double sumSteps = 0;
     for (var i = 1; i < widget.notes.length; i++) {
+      final cur = widget.notes[i];
       final prev = widget.notes[i - 1];
+      // Line-break markers and the steps into/out of them take no horizontal
+      // space in single-row mode — they're collapsed to zero width.
+      if (cur.isLineBreak || prev.isLineBreak) continue;
       var step = ts;
       if (widget.layout == CanvasLayout.horizontal &&
           prev.lyric != null &&
@@ -510,7 +646,10 @@ class WhiteboardCanvasState extends State<WhiteboardCanvas> {
     final rawChromatics = widget.notes.map((n) => n.totalChromatic).toList();
     final pitchedIndices = <int>[
       for (var i = 0; i < widget.notes.length; i++)
-        if (!widget.notes[i].isSpacer && !widget.notes[i].isLyricOnly) i,
+        if (!widget.notes[i].isSpacer &&
+            !widget.notes[i].isLyricOnly &&
+            !widget.notes[i].isLineBreak)
+          i,
     ];
 
     final int minC;
@@ -539,56 +678,97 @@ class WhiteboardCanvasState extends State<WhiteboardCanvas> {
     final pitchSpan = (maxC - minC) * chromaticUnit;
 
     final margin = isPreview ? 20.0 : 80.0;
+    final rows = _rowAssignments();
+    final rowCount = rows.rowCount;
+    final rowOfIndex = rows.rowOfIndex;
 
-    final pitchAxisLength = (widget.layout == CanvasLayout.horizontal
+    // Per-row pitch axis: the music area minus inter-row system bands,
+    // divided evenly across rows. In single-row mode this collapses back
+    // to the full music area.
+    final fullPitchAxisLength = (widget.layout == CanvasLayout.horizontal
             ? canvas.height - titleOffset
             : canvas.width) -
         margin * 2;
+    final bool useBands = widget.respectLineBreaks &&
+        rowCount > 1 &&
+        widget.layout == CanvasLayout.horizontal;
+    final double bandHeight = useBands ? ts * _systemBandFactor : 0.0;
+    final rowHeight =
+        (fullPitchAxisLength - (rowCount - 1) * bandHeight) / rowCount;
     final timeAxisLength = (widget.layout == CanvasLayout.horizontal
             ? canvas.width
             : canvas.height - titleOffset) -
         margin * 2;
 
-    // Compute step offsets: tokens normally step by ts, but in horizontal
-    // mode a wide lyric on token i pushes token i+1 right by enough to clear it.
-    final timeOffsets = <double>[0.0];
-    for (var i = 1; i < widget.notes.length; i++) {
-      final prev = widget.notes[i - 1];
-      var step = ts;
-      if (widget.layout == CanvasLayout.horizontal &&
-          prev.lyric != null &&
-          prev.lyric!.isNotEmpty) {
-        final w = _measureLyricWidth(prev.lyric!, lyricStyle);
-        step = math.max(ts, w + _lyricGap);
+    // Per-row time offsets — each row starts at 0 and accumulates by ts (or
+    // wider lyric step) only on transitions between renderable notes in the
+    // same row. Line breaks belong to row -1 and contribute nothing.
+    final timeOffsetForIndex = List<double>.filled(widget.notes.length, 0.0);
+    final rowLastRenderable = List<int?>.filled(rowCount, null);
+    for (var i = 0; i < widget.notes.length; i++) {
+      final r = rowOfIndex[i];
+      if (r < 0) continue;
+      final prevIdx = rowLastRenderable[r];
+      if (prevIdx == null) {
+        timeOffsetForIndex[i] = 0.0;
+      } else {
+        final prev = widget.notes[prevIdx];
+        var step = ts;
+        if (widget.layout == CanvasLayout.horizontal &&
+            prev.lyric != null &&
+            prev.lyric!.isNotEmpty) {
+          final w = _measureLyricWidth(prev.lyric!, lyricStyle);
+          step = math.max(ts, w + _lyricGap);
+        }
+        timeOffsetForIndex[i] = timeOffsetForIndex[prevIdx] + step;
       }
-      timeOffsets.add(timeOffsets.last + step);
+      rowLastRenderable[r] = i;
     }
-    final timeSpan = timeOffsets.last;
+    final perRowTimeSpan = List<double>.generate(rowCount, (r) {
+      final last = rowLastRenderable[r];
+      return last == null ? 0.0 : timeOffsetForIndex[last];
+    });
 
-    // Pitch axis: center the chromatic range within the content area.
-    final pitchStart = margin + (pitchAxisLength - pitchSpan) / 2;
+    // Per-row time start (justify within each row independently).
+    final perRowTimeStart = List<double>.generate(rowCount, (r) {
+      switch (widget.justify) {
+        case CanvasJustify.left:
+          return margin + ts / 2;
+        case CanvasJustify.center:
+          return margin + (timeAxisLength - perRowTimeSpan[r]) / 2;
+        case CanvasJustify.right:
+          return margin + timeAxisLength - perRowTimeSpan[r] - ts / 2;
+      }
+    });
 
-    // Time axis: justify left, center, or right.
-    final double timeStart;
-    switch (widget.justify) {
-      case CanvasJustify.left:
-        timeStart = margin + ts / 2;
-      case CanvasJustify.center:
-        timeStart = margin + (timeAxisLength - timeSpan) / 2;
-      case CanvasJustify.right:
-        timeStart = margin + timeAxisLength - timeSpan - ts / 2;
-    }
+    // Per-row pitch baseline — lowest-pitch's center coordinate on the
+    // pitch axis, derived from the row's vertical range plus a centering
+    // pad. Each step between rows includes one bandHeight of system-bar
+    // reservation. In single-row mode this collapses to the original
+    // pitchStart formula.
+    final perRowPitchAxisStart = List<double>.generate(rowCount, (r) {
+      // r=0 is the top row, r=rowCount-1 is the bottom row.
+      final padInRow = (rowHeight - pitchSpan) / 2;
+      return margin +
+          (rowCount - 1 - r) * (rowHeight + bandHeight) +
+          padInRow;
+    });
 
     return List.generate(widget.notes.length, (i) {
-      final timePos = timeStart + timeOffsets[i];
+      final r = rowOfIndex[i];
+      // Line-break markers have no on-screen presence; park them at origin.
+      if (r < 0) return Offset.zero;
+
+      final timePos = perRowTimeStart[r] + timeOffsetForIndex[i];
       final pitchOffsetFromMin = (chromatics[i] - minC) * chromaticUnit;
+      final rowPitchStart = perRowPitchAxisStart[r];
 
       switch (widget.layout) {
         case CanvasLayout.horizontal:
-          final y = canvas.height - pitchStart - pitchOffsetFromMin;
+          final y = canvas.height - rowPitchStart - pitchOffsetFromMin;
           return Offset(timePos, y);
         case CanvasLayout.vertical:
-          final x = pitchStart + pitchOffsetFromMin;
+          final x = rowPitchStart + pitchOffsetFromMin;
           return Offset(x, titleOffset + timePos);
       }
     });

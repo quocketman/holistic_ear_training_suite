@@ -10,6 +10,43 @@ import 'png_export_native.dart'
     if (dart.library.js_interop) 'png_export_web.dart' as platform;
 import 'url_state.dart';
 
+/// Captures the [RepaintBoundary] at [boundaryKey] and saves it as a PNG.
+/// Returns the destination path/filename. Throws on cancellation.
+Future<String> exportRepaintBoundaryToPng({
+  required GlobalKey boundaryKey,
+  required String filenamePrefix,
+  double pixelRatio = 2.0,
+}) async {
+  final pngBytes = await _captureBoundaryPng(
+    boundaryKey: boundaryKey,
+    pixelRatio: pixelRatio,
+  );
+  final timestamp = DateTime.now()
+      .toIso8601String()
+      .replaceAll(':', '-')
+      .split('.')
+      .first;
+  final filename = '${filenamePrefix}_$timestamp.png';
+  return platform.savePngBytes(filename: filename, bytes: pngBytes);
+}
+
+Future<Uint8List> _captureBoundaryPng({
+  required GlobalKey boundaryKey,
+  required double pixelRatio,
+}) async {
+  final boundary = boundaryKey.currentContext?.findRenderObject()
+      as RenderRepaintBoundary?;
+  if (boundary == null) {
+    throw StateError('RepaintBoundary not found for export');
+  }
+  final image = await boundary.toImage(pixelRatio: pixelRatio);
+  final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+  if (byteData == null) {
+    throw StateError('Failed to encode source image');
+  }
+  return byteData.buffer.asUint8List();
+}
+
 /// Captures a [RepaintBoundary] (looked up via [boundaryKey]) into a PDF
 /// containing the rendered image, the user's raw solfège text in the bottom
 /// margin, and a clickable link back to tuneindigo.com.
@@ -24,8 +61,8 @@ Future<String> exportRepaintBoundaryToPdf({
   String? title,
   double pixelRatio = 2.0,
 }) async {
-  final boundary = boundaryKey.currentContext?.findRenderObject()
-      as RenderRepaintBoundary?;
+  final boundary =
+      boundaryKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
   if (boundary == null) {
     throw StateError('RepaintBoundary not found for export');
   }
@@ -45,11 +82,8 @@ Future<String> exportRepaintBoundaryToPdf({
     solfegeText: solfegeText,
   );
 
-  final timestamp = DateTime.now()
-      .toIso8601String()
-      .replaceAll(':', '-')
-      .split('.')
-      .first;
+  final timestamp =
+      DateTime.now().toIso8601String().replaceAll(':', '-').split('.').first;
   final filename = '${filenamePrefix}_$timestamp.pdf';
 
   return platform.savePdfBytes(filename: filename, bytes: pdfBytes);
@@ -69,10 +103,10 @@ Future<Uint8List> _buildPdf({
 
   final image = pw.MemoryImage(imagePng);
   final isLandscape = sourceWidth >= sourceHeight;
-  final pageFormat = (isLandscape
-          ? PdfPageFormat.letter.landscape
-          : PdfPageFormat.letter)
-      .copyWith(marginTop: 36, marginBottom: 36, marginLeft: 36, marginRight: 36);
+  final pageFormat =
+      (isLandscape ? PdfPageFormat.letter.landscape : PdfPageFormat.letter)
+          .copyWith(
+              marginTop: 36, marginBottom: 36, marginLeft: 36, marginRight: 36);
 
   pdf.addPage(
     pw.Page(
@@ -95,7 +129,7 @@ Future<Uint8List> _buildPdf({
                 padding: const pw.EdgeInsets.only(top: 4, bottom: 4),
                 child: pw.Text(
                   solfegeText.trim(),
-                  style: pw.TextStyle(
+                  style: const pw.TextStyle(
                     fontSize: 9,
                     color: PdfColors.grey700,
                   ),
@@ -110,7 +144,7 @@ Future<Uint8List> _buildPdf({
                   : buildSolfegeShareUrl(solfegeText.trim()),
               child: pw.Text(
                 'Edit this in the Whiteboard — whiteboard.tuneindigo.com',
-                style: pw.TextStyle(
+                style: const pw.TextStyle(
                   fontSize: 9,
                   color: PdfColors.blue700,
                   decoration: pw.TextDecoration.underline,

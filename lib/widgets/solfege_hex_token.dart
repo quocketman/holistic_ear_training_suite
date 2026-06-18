@@ -26,6 +26,11 @@ enum SolfegeHexState {
   glow,
 }
 
+/// Whether the surrounding canvas background is dark or light. Inverts
+/// the dark/glow token fill (black ↔ white) and the label color so tokens
+/// keep good contrast against either background.
+enum SolfegeHexTheme { dark, light }
+
 /// Hexagonal token rendered procedurally to match the Illustrator
 /// `hex_<state>_<syllable>_<octave>.svg` set without bundling SVG assets.
 ///
@@ -37,6 +42,7 @@ class SolfegeHexToken extends StatefulWidget {
   final int chromaticOffset;
   final double size;
   final SolfegeHexState state;
+  final SolfegeHexTheme theme;
   final VoidCallback? onTapDown;
   final VoidCallback? onTapUp;
 
@@ -46,6 +52,7 @@ class SolfegeHexToken extends StatefulWidget {
     required this.chromaticOffset,
     this.size = 80.0,
     this.state = SolfegeHexState.dark,
+    this.theme = SolfegeHexTheme.dark,
     this.onTapDown,
     this.onTapUp,
   });
@@ -95,6 +102,16 @@ class _SolfegeHexTokenState extends State<SolfegeHexToken>
     // faded label so the message ("this isn't in the set") reads even when
     // the hex is dim.
     final labelOpacity = widget.state == SolfegeHexState.no ? 0.45 : 1.0;
+    // Label color follows the fill: dark/glow tokens fill with the inverse
+    // of the canvas bg, so the label rides the opposite color for contrast.
+    final isLightTheme = widget.theme == SolfegeHexTheme.light;
+    final Color labelColor = switch (widget.state) {
+      SolfegeHexState.dark || SolfegeHexState.glow =>
+        isLightTheme ? Colors.black : Colors.white,
+      SolfegeHexState.color => Colors.white,
+      SolfegeHexState.grey => Colors.white,
+      SolfegeHexState.no => isLightTheme ? Colors.black : Colors.white,
+    };
 
     final hex = SizedBox(
       width: widget.size,
@@ -107,6 +124,7 @@ class _SolfegeHexTokenState extends State<SolfegeHexToken>
             painter: _HexPainter(
               color: hexColor,
               state: widget.state,
+              theme: widget.theme,
             ),
           ),
           // Label fills the hex's safe interior. FittedBox scales the
@@ -127,7 +145,7 @@ class _SolfegeHexTokenState extends State<SolfegeHexToken>
                       // Large base size — FittedBox scales it to fit.
                       fontSize: 100,
                       fontWeight: FontWeight.bold,
-                      color: Colors.white,
+                      color: labelColor,
                       height: 1.0,
                     ),
                   ),
@@ -159,15 +177,18 @@ class _SolfegeHexTokenState extends State<SolfegeHexToken>
 class _HexPainter extends CustomPainter {
   final Color color;
   final SolfegeHexState state;
+  final SolfegeHexTheme theme;
 
   const _HexPainter({
     required this.color,
     required this.state,
+    this.theme = SolfegeHexTheme.dark,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
     final path = _flatTopHexPath(size, inset: 0.92);
+    final isLightTheme = theme == SolfegeHexTheme.light;
 
     // Outer glow drawn first so it sits behind fill + stroke.
     if (state == SolfegeHexState.glow) {
@@ -176,18 +197,25 @@ class _HexPainter extends CustomPainter {
         ..maskFilter = const MaskFilter.blur(BlurStyle.outer, 18);
       canvas.drawPath(path, glowPaint);
 
-      // A second, tighter glow gives a warmer center to the halo.
+      // A second, tighter glow gives a warmer center to the halo. On light
+      // backgrounds the white halo would disappear into the page — use the
+      // ring color at higher opacity so the playhead still reads.
       final innerGlow = Paint()
-        ..color = Colors.white.withValues(alpha: 0.55)
+        ..color = isLightTheme
+            ? color.withValues(alpha: 0.55)
+            : Colors.white.withValues(alpha: 0.55)
         ..maskFilter = const MaskFilter.blur(BlurStyle.outer, 8);
       canvas.drawPath(path, innerGlow);
     }
 
-    // Fill
+    // Fill — dark/glow tokens invert with the theme so they contrast
+    // against the canvas background.
     final fillColor = switch (state) {
       SolfegeHexState.color => color,
-      SolfegeHexState.dark || SolfegeHexState.glow => Colors.black,
-      SolfegeHexState.grey => const Color(0xFF2A2A2A),
+      SolfegeHexState.dark || SolfegeHexState.glow =>
+        isLightTheme ? Colors.white : Colors.black,
+      SolfegeHexState.grey =>
+        isLightTheme ? const Color(0xFFE6E6E6) : const Color(0xFF2A2A2A),
       SolfegeHexState.no => Colors.transparent,
     };
     if (fillColor.a > 0) {
@@ -200,9 +228,15 @@ class _HexPainter extends CustomPainter {
     final thickStroke = (size.width * 0.025).clamp(0.6, double.infinity);
     final thinStroke = (size.width * 0.019).clamp(0.6, double.infinity);
     final (strokeColor, strokeWidth) = switch (state) {
-      SolfegeHexState.color => (Colors.white.withValues(alpha: 0.35), thinStroke),
+      SolfegeHexState.color => (
+        (isLightTheme ? Colors.black : Colors.white).withValues(alpha: 0.35),
+        thinStroke,
+      ),
       SolfegeHexState.dark || SolfegeHexState.glow => (color, thickStroke),
-      SolfegeHexState.grey => (const Color(0xFF555555), thinStroke),
+      SolfegeHexState.grey => (
+        isLightTheme ? const Color(0xFFAAAAAA) : const Color(0xFF555555),
+        thinStroke,
+      ),
       SolfegeHexState.no => (color.withValues(alpha: 0.45), thinStroke),
     };
     canvas.drawPath(
@@ -237,5 +271,5 @@ class _HexPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _HexPainter old) =>
-      old.color != color || old.state != state;
+      old.color != color || old.state != state || old.theme != theme;
 }

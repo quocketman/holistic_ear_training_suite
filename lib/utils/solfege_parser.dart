@@ -17,6 +17,9 @@
 ///   - Underscore (`_`) inserts a blank spacer. Repeated for wider gaps.
 ///   - Pipe (`|`) groups notes for visual clustering. May be standalone or
 ///     attached to a token.
+///   - Double pipe (`||`, standalone) inserts a line break. Honored by
+///     multi-row exports (PDF, PNG, social-media share); ignored by the
+///     live horizontal-scroll editor.
 ///
 /// Recognised chromatic syllables (offset 0–11):
 ///   do(0) di/ra(1) re(2) ri/me(3) mi(4) fa(5) fi/se(6)
@@ -35,6 +38,10 @@ class SolfegeNote {
   /// pitched notes).
   final bool isLyricOnly;
 
+  /// A line break — produced by the standalone `||` token. Renders nothing
+  /// in the live editor; multi-row exports split rows on this marker.
+  final bool isLineBreak;
+
   /// Optional group identifier — notes with the same id render with a faint
   /// rounded background underneath, visually clustering them.
   final int? groupId;
@@ -46,6 +53,7 @@ class SolfegeNote {
     this.lyric,
     this.isSpacer = false,
     this.isLyricOnly = false,
+    this.isLineBreak = false,
     this.groupId,
   });
 
@@ -114,6 +122,18 @@ class SolfegeParser {
     int nextGroupId = 0;
 
     for (final raw in tokens) {
+      // Standalone `||` is a line break — handled first so it doesn't get
+      // consumed by the general `^\|+$` group-toggle path below.
+      if (raw == '||') {
+        notes.add(const SolfegeNote(
+          syllable: '',
+          chromaticOffset: 0,
+          octave: 0,
+          isLineBreak: true,
+        ));
+        continue;
+      }
+
       // Standalone pipe(s): each `|` toggles group state.
       if (RegExp(r'^\|+$').hasMatch(raw)) {
         for (var i = 0; i < raw.length; i++) {
