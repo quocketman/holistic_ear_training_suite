@@ -29,7 +29,7 @@ class EarTrainingApp extends StatelessWidget {
     return ChangeNotifierProvider(
       create: (context) => MusicalState(),
       child: MaterialApp(
-        title: 'Ear Training',
+        title: 'Tune Indigo Whiteboard',
         theme: ThemeData(
           colorScheme: ColorScheme.fromSeed(
             seedColor: Colors.deepPurple,

@@ -455,14 +455,17 @@ class WhiteboardCanvasState extends State<WhiteboardCanvas> {
 
       final lyric = n.lyric;
       if (lyric != null && lyric.isNotEmpty) {
-        // For lyric-only notes the arrow-play playhead pauses here so the
-        // user can imagine the unsung pitch — scale the lyric up to mirror
-        // the GLOW state pitched tokens use.
-        final isLyricPlayhead =
-            n.isLyricOnly && widget.playingIndex == i;
+        // Scale the lyric up when this lyric-only note is the arrow-play
+        // playhead OR when the user is currently tapping it. Mirrors the
+        // GLOW / scale-up cue used for pitched tokens, so a tap on a word
+        // that has no solfège still feels like an acknowledged interaction
+        // (no tone — that's intentional silence).
+        final isLyricActive = n.isLyricOnly &&
+            (widget.playingIndex == i ||
+                (_interactive && i == _activeIndex));
         Widget lyricWidget = Text(
           lyric,
-          style: isLyricPlayhead
+          style: isLyricActive
               ? lyricStyle.copyWith(
                   fontSize: (lyricStyle.fontSize ?? 16) * 1.8,
                   fontWeight: FontWeight.w700,

@@ -1,11 +1,11 @@
 {
-    "name": "ear_training_app",
-    "short_name": "ear_training_app",
+    "name": "Tune Indigo Whiteboard",
+    "short_name": "Whiteboard",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "A free tool from Tune Indigo for visualizing how solfège, lyrics, and melody connect in a song.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

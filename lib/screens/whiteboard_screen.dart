@@ -20,6 +20,7 @@ import '../services/url_state.dart';
 import '../utils/solfege_parser.dart';
 import '../widgets/solfege_highlight_controller.dart';
 import 'sound_design_screen.dart';
+import '../widgets/find_the_key_modal.dart';
 import '../widgets/solfege_hex_token.dart';
 import '../widgets/whiteboard_canvas.dart';
 
@@ -154,7 +155,10 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
   Future<void> _onNoteDown(int index) async {
     if (index < 0 || index >= _parsed.notes.length) return;
     final note = _parsed.notes[index];
-    if (note.isSpacer) return;
+    // No audio for spacers or lyric-only notes — the latter are
+    // intentional silent placeholders. The canvas still scales them
+    // visually so the user sees their tap registered.
+    if (note.isSpacer || note.isLyricOnly) return;
     final tonic = context.read<MusicalState>().currentTonic;
     final midi = _midiForNote(note, tonic);
     if (midi < 0 || midi > 127) return;
@@ -171,10 +175,20 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
   void _onNoteUp(int index) {
     final handle = _activeNotes.remove(index);
     handle?.release();
-    // Releasing a tap also engages arrow-play from that point — focus the
-    // body so the next ← / → routes to _onPlayKey, and surface the
-    // on-screen arrow buttons for touch users.
-    if (!_parsed.notes[index].isSpacer && !_parsed.notes[index].isLyricOnly) {
+    final note = _parsed.notes[index];
+    // Tapping a lyric-only note that's currently the arrow-play playhead
+    // dismisses it (scales the enlarged syllable back down). Otherwise
+    // lyric-only taps don't change play state — they're silent acknowledgments.
+    if (note.isLyricOnly) {
+      if (_playIndex == index) {
+        setState(() => _playIndex = -1);
+      }
+      return;
+    }
+    // Pitched tap: engage arrow-play from this point — focus the body so
+    // the next ← / → routes to _onPlayKey, and surface the on-screen
+    // arrow buttons for touch users.
+    if (!note.isSpacer) {
       setState(() {
         _playIndex = index;
         _playEngaged = true;
@@ -232,16 +246,37 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
   /// repaints before [run] captures it.
   Future<void> _runExport({
     required bool forceLight,
+    required String label,
     Size? sizeOverride,
     required Future<String> Function() run,
   }) async {
     if (_parsed.notes.isEmpty || _exporting) return;
+
+    // Phase 1 — open the dialog FIRST with no heavy rebuild yet, so the
+    // popup-menu's close animation runs smoothly and the user sees
+    // "Generating…" immediately instead of a frozen-looking dropdown.
+    setState(() => _exporting = true);
+    // ignore: unawaited_futures
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.black.withValues(alpha: 0.55),
+      builder: (_) => _ExportProgressDialog(label: label),
+    );
+    // Let the dialog open animation and popup-menu close animation
+    // both get frames before we kick off the expensive canvas rebuild.
+    await WidgetsBinding.instance.endOfFrame;
+    await WidgetsBinding.instance.endOfFrame;
+
+    // Phase 2 — now flip theme + size. The off-screen canvas rebuilds
+    // at letter aspect; the dialog stays visible during the rebuild so
+    // there's continuous feedback.
+    if (!mounted) return;
     setState(() {
-      _exporting = true;
       _forceExportLight = forceLight;
       _exportSizeOverride = sizeOverride;
     });
-    // One frame for the export canvas to repaint with the forced theme/size.
+    await WidgetsBinding.instance.endOfFrame;
     await WidgetsBinding.instance.endOfFrame;
     try {
       final destination = await run();
@@ -259,6 +294,7 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
       }
     } finally {
       if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
         setState(() {
           _exporting = false;
           _forceExportLight = false;
@@ -272,6 +308,7 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
     final layout = _resolvedLayout(context);
     return _runExport(
       forceLight: true,
+      label: 'Generating PDF…',
       sizeOverride: _letterExportSize(layout),
       run: () => exportRepaintBoundaryToPdf(
         boundaryKey: _canvasKey,
@@ -284,6 +321,7 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
 
   Future<void> _downloadPng() => _runExport(
         forceLight: false,
+        label: 'Generating PNG…',
         run: () => exportRepaintBoundaryToPng(
           boundaryKey: _canvasKey,
           filenamePrefix: _exportFilenamePrefix(),
@@ -542,10 +580,19 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
     );
   }
 
+  void _openFindTheKey() {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => FindTheKeyModal(
+        audioService: _audioService,
+        theme: _theme,
+      ),
+    );
+  }
+
   Future<void> _openVideo() async {
-    // Tune Indigo Music YouTube channel — once a specific intro video is
-    // recorded, swap in its watch URL.
-    await launchUrl(Uri.parse('https://www.youtube.com/@tuneindigomusic'));
+    await launchUrl(Uri.parse('https://youtu.be/iQ1DbGv2f9c'));
   }
 
   void _onShare() {
@@ -916,6 +963,15 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
               ),
             ),
             _buildKeyPicker(),
+            // Find the Key — ear-only key-finding overlay. Sits next to
+            // the key picker so the two key-related affordances cluster
+            // visually; the hearing glyph differentiates "by ear" from
+            // the dropdown's "by name".
+            IconButton(
+              icon: const Icon(Icons.hearing_outlined),
+              tooltip: 'Find the key by ear',
+              onPressed: _openFindTheKey,
+            ),
             _buildOctavePicker(),
             // PLAY — primes the keyboard playhead. Arrow keys advance/back.
             IconButton(
@@ -1576,6 +1632,86 @@ class _WelcomeModal extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Modal dialog shown while a PDF or PNG export is in flight. Lives on
+/// its own navigator route so it paints above any in-flight popup-menu
+/// close animation — users see "Generating PDF…" + progress immediately
+/// instead of staring at a frozen-looking dropdown.
+class _ExportProgressDialog extends StatelessWidget {
+  final String label;
+  const _ExportProgressDialog({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      child: Center(
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 360),
+          padding: const EdgeInsets.fromLTRB(28, 24, 28, 24),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1A1A1A),
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: const [
+              BoxShadow(
+                color: Colors.black54,
+                blurRadius: 18,
+                offset: Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(
+                    Icons.file_download_outlined,
+                    color: Colors.white,
+                    size: 22,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      label,
+                      style: GoogleFonts.sourceSans3(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(3),
+                child: LinearProgressIndicator(
+                  minHeight: 6,
+                  backgroundColor: Colors.white.withValues(alpha: 0.12),
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    ToneTokenColors.getColor(7), // so-blue accent
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Rendering the canvas at full resolution — this usually takes a few seconds.',
+                style: GoogleFonts.sourceSans3(
+                  fontSize: 13,
+                  color: Colors.white.withValues(alpha: 0.7),
+                  height: 1.35,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
