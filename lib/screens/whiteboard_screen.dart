@@ -85,6 +85,10 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
   // regardless of `_theme`. Set transiently around a PDF download so the
   // print-bound output is always on a white background.
   bool _forceExportLight = false;
+  // When non-null, the off-screen export canvas renders at this size
+  // instead of [CanvasLayout.exportSize]. Used to retarget PDFs to letter
+  // aspect (more vertical room → bigger tokens in multi-row layouts).
+  Size? _exportSizeOverride;
 
   @override
   void initState() {
@@ -218,19 +222,26 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
         : 'whiteboard';
   }
 
+  /// Portrait letter at ~200 dpi (1700 × 2200). Matches standard sheet-music
+  /// orientation: each horizontal system stacks down the page, more room
+  /// for multi-row layouts than a landscape sheet would give.
+  Size _letterExportSize(CanvasLayout layout) => const Size(1700, 2200);
+
   /// Common pre/post around a capture — toggles the off-screen canvas to
-  /// the requested theme (PDF forces light for print) and waits a frame so
-  /// the RepaintBoundary repaints before [run] captures it.
+  /// the requested theme + size and waits a frame so the RepaintBoundary
+  /// repaints before [run] captures it.
   Future<void> _runExport({
     required bool forceLight,
+    Size? sizeOverride,
     required Future<String> Function() run,
   }) async {
     if (_parsed.notes.isEmpty || _exporting) return;
     setState(() {
       _exporting = true;
       _forceExportLight = forceLight;
+      _exportSizeOverride = sizeOverride;
     });
-    // One frame for the export canvas to repaint with the forced theme.
+    // One frame for the export canvas to repaint with the forced theme/size.
     await WidgetsBinding.instance.endOfFrame;
     try {
       final destination = await run();
@@ -251,20 +262,25 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
         setState(() {
           _exporting = false;
           _forceExportLight = false;
+          _exportSizeOverride = null;
         });
       }
     }
   }
 
-  Future<void> _downloadPdf() => _runExport(
-        forceLight: true,
-        run: () => exportRepaintBoundaryToPdf(
-          boundaryKey: _canvasKey,
-          filenamePrefix: _exportFilenamePrefix(),
-          title: _titleController.text.trim(),
-          solfegeText: _controller.text,
-        ),
-      );
+  Future<void> _downloadPdf() {
+    final layout = _resolvedLayout(context);
+    return _runExport(
+      forceLight: true,
+      sizeOverride: _letterExportSize(layout),
+      run: () => exportRepaintBoundaryToPdf(
+        boundaryKey: _canvasKey,
+        filenamePrefix: _exportFilenamePrefix(),
+        title: _titleController.text.trim(),
+        solfegeText: _controller.text,
+      ),
+    );
+  }
 
   Future<void> _downloadPng() => _runExport(
         forceLight: false,
@@ -357,11 +373,14 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
   /// Returns the index of the next/prev pitched note from [from], stepping
   /// by [delta] (+1 forward, -1 back). Skips spacers and lyric-only notes.
   /// Returns null if no further pitched note exists in that direction.
+  /// Next index the arrow-play stepper should land on. Stops on pitched
+  /// notes AND on lyric-only notes (the latter so the user can pause and
+  /// imagine the unsung pitch). Skips spacers and line-break markers.
   int? _nextPitchedIndex(int from, int delta) {
     var i = from + delta;
     while (i >= 0 && i < _parsed.notes.length) {
       final n = _parsed.notes[i];
-      if (!n.isSpacer && !n.isLyricOnly && !n.isLineBreak) return i;
+      if (!n.isSpacer && !n.isLineBreak) return i;
       i += delta;
     }
     return null;
@@ -459,6 +478,11 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
     });
 
     final note = _parsed.notes[target];
+    // Lyric-only notes are intentional pauses — no audio. The canvas's
+    // playingIndex still points here, scaling the lyric so the user has
+    // a visual cue to imagine the unsung pitch.
+    if (note.isLyricOnly) return;
+
     final tonic = context.read<MusicalState>().currentTonic;
     final midi = tonic + note.chromaticOffset + note.octave * 12;
     if (midi < 0 || midi > 127) return;
@@ -830,7 +854,7 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
               sub:
                   'Splits the music into stacked rows when you download or share. '
                   'The on-screen editor stays one continuous line.',
-              example: 'do re mi || fa so la',
+              example: 'do re mi [] fa so la',
             ),
       ],
     );
@@ -849,7 +873,7 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
   @override
   Widget build(BuildContext context) {
     final layout = _resolvedLayout(context);
-    final canvasSize = layout.exportSize;
+    final canvasSize = _exportSizeOverride ?? layout.exportSize;
 
     // "so" (Blue, #3F55C7) — chromatic offset 7. AppBar uses this; the
     // bottom signup banner mirrors it so chrome reads as one cohesive frame.
@@ -1167,6 +1191,7 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
                 justify: _justify,
                 theme: _forceExportLight ? SolfegeHexTheme.light : _theme,
                 respectLineBreaks: true,
+                sizeOverride: _exportSizeOverride,
               ),
             ),
           ),

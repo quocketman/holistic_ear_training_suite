@@ -79,6 +79,12 @@ class WhiteboardCanvas extends StatefulWidget {
   /// the live horizontal-scroll editor.
   final bool respectLineBreaks;
 
+  /// Overrides [CanvasLayout.exportSize] for the off-screen render — used
+  /// to retarget exports to a non-16:9 page (e.g. letter aspect for PDF
+  /// print). Includes title-area height; doesn't enter preview mode, so
+  /// the export 80 px margins are preserved.
+  final Size? sizeOverride;
+
   const WhiteboardCanvas({
     super.key,
     required this.notes,
@@ -92,6 +98,7 @@ class WhiteboardCanvas extends StatefulWidget {
     this.playingIndex,
     this.theme = SolfegeHexTheme.dark,
     this.respectLineBreaks = false,
+    this.sizeOverride,
   });
 
   @override
@@ -227,7 +234,9 @@ class WhiteboardCanvasState extends State<WhiteboardCanvas> {
 
   @override
   Widget build(BuildContext context) {
-    final viewport = widget.fitToSize ?? widget.layout.exportSize;
+    final viewport = widget.fitToSize ??
+        widget.sizeOverride ??
+        widget.layout.exportSize;
     final isPreview = widget.fitToSize != null;
     final titleFontSize = isPreview ? 20.0 : 48.0;
     final titleAreaHeight = isPreview ? 30.0 : widget.layout.titleHeight;
@@ -446,8 +455,21 @@ class WhiteboardCanvasState extends State<WhiteboardCanvas> {
 
       final lyric = n.lyric;
       if (lyric != null && lyric.isNotEmpty) {
-        Widget lyricWidget =
-            Text(lyric, style: lyricStyle, textAlign: TextAlign.left);
+        // For lyric-only notes the arrow-play playhead pauses here so the
+        // user can imagine the unsung pitch — scale the lyric up to mirror
+        // the GLOW state pitched tokens use.
+        final isLyricPlayhead =
+            n.isLyricOnly && widget.playingIndex == i;
+        Widget lyricWidget = Text(
+          lyric,
+          style: isLyricPlayhead
+              ? lyricStyle.copyWith(
+                  fontSize: (lyricStyle.fontSize ?? 16) * 1.8,
+                  fontWeight: FontWeight.w700,
+                )
+              : lyricStyle,
+          textAlign: TextAlign.left,
+        );
         if (isVertical) {
           // Rotate lyric 90° clockwise to match rotated tiles. Position it
           // to the right of the tile (or centered on p for lyric-only).

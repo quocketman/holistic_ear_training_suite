@@ -17,7 +17,7 @@
 ///   - Underscore (`_`) inserts a blank spacer. Repeated for wider gaps.
 ///   - Pipe (`|`) groups notes for visual clustering. May be standalone or
 ///     attached to a token.
-///   - Double pipe (`||`, standalone) inserts a line break. Honored by
+///   - Empty brackets (`[]`, standalone) insert a line break. Honored by
 ///     multi-row exports (PDF, PNG, social-media share); ignored by the
 ///     live horizontal-scroll editor.
 ///
@@ -122,9 +122,9 @@ class SolfegeParser {
     int nextGroupId = 0;
 
     for (final raw in tokens) {
-      // Standalone `||` is a line break — handled first so it doesn't get
-      // consumed by the general `^\|+$` group-toggle path below.
-      if (raw == '||') {
+      // Standalone `[]` is a line break — easier to spot in text than a
+      // double pipe, which visually fights the `|`-bracketed group syntax.
+      if (raw == '[]') {
         notes.add(const SolfegeNote(
           syllable: '',
           chromaticOffset: 0,
