@@ -115,7 +115,12 @@ class WhiteboardCanvasState extends State<WhiteboardCanvas> {
     return _lastPositions[index];
   }
 
-  static const double _lyricGap = 4.0;
+  /// Breathing room between adjacent lyric labels, as a fraction of token
+  /// size. A flat few pixels reads as crowded once tokens grow large — at
+  /// that scale two words land only a hair apart ("onetime") even though
+  /// they technically don't overlap. Scaling with the token keeps the gap
+  /// looking consistent across zoom levels.
+  static const double _lyricGapFactor = 0.35;
 
   /// Index of the token currently under the active pointer (-1 = none).
   int _activeIndex = -1;
@@ -665,7 +670,7 @@ class WhiteboardCanvasState extends State<WhiteboardCanvas> {
         ? _measureLyricWidth(cur.lyric!, style)
         : 0.0;
     if (prevW == 0 && curW == 0) return ts;
-    return math.max(ts, (prevW + curW) / 2 + _lyricGap);
+    return math.max(ts, (prevW + curW) / 2 + ts * _lyricGapFactor);
   }
 
   double _measureLyricWidth(String text, TextStyle style) {
