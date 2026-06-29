@@ -641,16 +641,31 @@ class WhiteboardCanvasState extends State<WhiteboardCanvas> {
       // Line-break markers and the steps into/out of them take no horizontal
       // space in single-row mode — they're collapsed to zero width.
       if (cur.isLineBreak || prev.isLineBreak) continue;
-      var step = ts;
-      if (widget.layout == CanvasLayout.horizontal &&
-          prev.lyric != null &&
-          prev.lyric!.isNotEmpty) {
-        final w = _measureLyricWidth(prev.lyric!, lyricStyle);
-        step = math.max(ts, w + _lyricGap);
-      }
-      sumSteps += step;
+      sumSteps += _horizontalStep(prev, cur, ts, lyricStyle);
     }
     return 2 * margin + ts + sumSteps;
+  }
+
+  /// Horizontal advance between two consecutive renderable notes on the time
+  /// axis. At minimum one token diameter so the hexes never collide. Because
+  /// each lyric is drawn centered under its own token, two adjacent lyrics
+  /// overlap once the gap drops below half of each one's width plus the
+  /// breathing gap — so widen the step by `(prevWidth + curWidth) / 2 + gap`
+  /// whenever either note carries a lyric. (Considering only the previous
+  /// lyric, as the old code did, let a short word crowd into a long one that
+  /// followed it.) Vertical layout rotates lyrics to the side, so its step is
+  /// always a plain token diameter.
+  double _horizontalStep(
+      SolfegeNote prev, SolfegeNote cur, double ts, TextStyle style) {
+    if (widget.layout != CanvasLayout.horizontal) return ts;
+    final prevW = (prev.lyric != null && prev.lyric!.isNotEmpty)
+        ? _measureLyricWidth(prev.lyric!, style)
+        : 0.0;
+    final curW = (cur.lyric != null && cur.lyric!.isNotEmpty)
+        ? _measureLyricWidth(cur.lyric!, style)
+        : 0.0;
+    if (prevW == 0 && curW == 0) return ts;
+    return math.max(ts, (prevW + curW) / 2 + _lyricGap);
   }
 
   double _measureLyricWidth(String text, TextStyle style) {
@@ -738,13 +753,7 @@ class WhiteboardCanvasState extends State<WhiteboardCanvas> {
         timeOffsetForIndex[i] = 0.0;
       } else {
         final prev = widget.notes[prevIdx];
-        var step = ts;
-        if (widget.layout == CanvasLayout.horizontal &&
-            prev.lyric != null &&
-            prev.lyric!.isNotEmpty) {
-          final w = _measureLyricWidth(prev.lyric!, lyricStyle);
-          step = math.max(ts, w + _lyricGap);
-        }
+        final step = _horizontalStep(prev, widget.notes[i], ts, lyricStyle);
         timeOffsetForIndex[i] = timeOffsetForIndex[prevIdx] + step;
       }
       rowLastRenderable[r] = i;
@@ -779,12 +788,36 @@ class WhiteboardCanvasState extends State<WhiteboardCanvas> {
           padInRow;
     });
 
+    // Lyric-only words have no pitch. Rather than interpolate a height from
+    // their pitched neighbours (which made them bob up and down with the
+    // melody), park them all at one uniform height along the TOP of their
+    // row band — just under the text input — so they read as a lyric line
+    // above the music. Inset a little so the words don't clip the top edge.
+    final lyricOnlyInset = ts * 0.4;
+    double bandStartFor(int r) =>
+        margin + (rowCount - 1 - r) * (rowHeight + bandHeight);
+
     return List.generate(widget.notes.length, (i) {
       final r = rowOfIndex[i];
       // Line-break markers have no on-screen presence; park them at origin.
       if (r < 0) return Offset.zero;
 
       final timePos = perRowTimeStart[r] + timeOffsetForIndex[i];
+
+      if (widget.notes[i].isLyricOnly) {
+        switch (widget.layout) {
+          case CanvasLayout.horizontal:
+            // Pitch axis runs bottom→top; the band top is the high end.
+            final rowTopY = canvas.height - bandStartFor(r) - rowHeight;
+            return Offset(timePos, rowTopY + lyricOnlyInset);
+          case CanvasLayout.vertical:
+            // Pitch axis runs left→right (higher = right); park at the
+            // high-pitch (right) edge for a uniform column.
+            final rowRightX = bandStartFor(r) + rowHeight - lyricOnlyInset;
+            return Offset(rowRightX, titleOffset + timePos);
+        }
+      }
+
       final pitchOffsetFromMin = (chromatics[i] - minC) * chromaticUnit;
       final rowPitchStart = perRowPitchAxisStart[r];
 

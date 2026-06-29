@@ -50,10 +50,15 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
   final _previewCanvasKey = GlobalKey<WhiteboardCanvasState>();
   final AudioService _audioService = AudioService();
   final Map<int, NoteHandle> _activeNotes = {};
-  // Controls the horizontal scroll position of the canvas viewport. After
-  // each input change we jump to maxScrollExtent so the most recently typed
-  // tokens are always visible at the right edge.
+  // Controls the horizontal scroll position of the canvas viewport. We keep
+  // it scrolled so the note under the text cursor stays in view — whether the
+  // user is appending at the end or editing back in the middle.
   final _canvasScrollController = ScrollController();
+  // Last observed solfège text + cursor, so the controller listener can tell
+  // a text edit apart from a pure cursor move and react to each.
+  String _lastSolfegeText = '';
+  TextSelection _lastSolfegeSelection =
+      const TextSelection.collapsed(offset: -1);
   // Toggled by the AppBar ? icon. The help panel slides in below the input
   // area as an overlay on the canvas, so users can read the directions while
   // typing.
@@ -101,6 +106,8 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
     final initialText =
         (fromUrl != null && fromUrl.isNotEmpty) ? fromUrl : _persistedSolfege;
     _controller = SolfegeHighlightController(text: initialText);
+    _lastSolfegeText = initialText;
+    _controller.addListener(_onSolfegeControllerChanged);
     _titleController = TextEditingController(text: _persistedTitle);
     _justify = _persistedJustify;
     _theme = _persistedTheme;
@@ -138,6 +145,7 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
     }
     _activeNotes.clear();
     _audioService.dispose();
+    _controller.removeListener(_onSolfegeControllerChanged);
     _controller.dispose();
     _titleController.dispose();
     _canvasScrollController.dispose();
@@ -197,17 +205,89 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
     }
   }
 
-  void _onInputChanged(String value) {
-    setState(() {
-      _parsed = SolfegeParser.parse(value);
-    });
-    // After the canvas relayouts with the new content, jump the viewport to
-    // the right edge so the user always sees what they just typed.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_canvasScrollController.hasClients) return;
-      final position = _canvasScrollController.position;
-      _canvasScrollController.jumpTo(position.maxScrollExtent);
-    });
+  /// Single listener on the solfège controller: reparses on text edits and,
+  /// on either an edit or a bare cursor move, keeps the canvas scrolled to the
+  /// note the cursor is sitting in. Replaces the old "jump to the right edge
+  /// on every keystroke" behavior, which lost the user's place whenever they
+  /// went back to edit notes in the middle of a long melody.
+  void _onSolfegeControllerChanged() {
+    if (!mounted) return;
+    final text = _controller.text;
+    final selection = _controller.selection;
+    final textChanged = text != _lastSolfegeText;
+    final selectionChanged = selection != _lastSolfegeSelection;
+    _lastSolfegeText = text;
+    _lastSolfegeSelection = selection;
+
+    if (textChanged) {
+      setState(() {
+        _parsed = SolfegeParser.parse(text);
+      });
+    }
+    if (textChanged || selectionChanged) {
+      // Wait for the canvas to relayout with the new content/size before
+      // reading token positions.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _scrollToCursorNote();
+      });
+    }
+  }
+
+  /// The index of the note whose source token is at or most recently before
+  /// the text cursor, or null when there are no notes. Note `sourceStart`
+  /// values are non-decreasing, so the last token starting at/before the
+  /// cursor is the one being edited.
+  int? _noteIndexForCursor(int cursor) {
+    final notes = _parsed.notes;
+    if (notes.isEmpty) return null;
+    int? best;
+    for (var i = 0; i < notes.length; i++) {
+      final start = notes[i].sourceStart;
+      if (start < 0) continue;
+      if (start <= cursor) {
+        best = i;
+      } else {
+        break;
+      }
+    }
+    // Cursor sits before the first token — follow to the first note.
+    return best ?? 0;
+  }
+
+  /// Scrolls the horizontal canvas viewport so the note under the text cursor
+  /// stays comfortably in view. No-op when the note is already on-screen, and
+  /// when the content fits without scrolling (e.g. vertical/mobile layout).
+  void _scrollToCursorNote() {
+    if (!mounted || !_canvasScrollController.hasClients) return;
+    final position = _canvasScrollController.position;
+    if (position.maxScrollExtent <= 0) return;
+
+    final selection = _controller.selection;
+    if (!selection.isValid || selection.baseOffset < 0) return;
+    final index = _noteIndexForCursor(selection.baseOffset);
+    if (index == null) return;
+    final pos = _previewCanvasKey.currentState?.tokenPosition(index);
+    if (pos == null) return;
+
+    final viewport = position.viewportDimension;
+    final current = _canvasScrollController.offset;
+    final tokenX = pos.dx;
+    const edgePad = 80.0;
+
+    double? target;
+    if (tokenX < current + edgePad) {
+      target = tokenX - viewport * 0.3;
+    } else if (tokenX > current + viewport - edgePad) {
+      target = tokenX - viewport * 0.7;
+    }
+    if (target == null) return;
+
+    final clamped = target.clamp(0.0, position.maxScrollExtent);
+    _canvasScrollController.animateTo(
+      clamped,
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOut,
+    );
   }
 
   /// True only on iOS / Android. Desktop and web are always horizontal.
@@ -1111,7 +1191,9 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
                 const SizedBox(height: 8),
                 TextField(
                   controller: _controller,
-                  onChanged: _onInputChanged,
+                  // Text edits + cursor moves are handled by the controller
+                  // listener (_onSolfegeControllerChanged), which reparses and
+                  // keeps the canvas scrolled to the note being edited.
                   decoration: const InputDecoration(
                     border: OutlineInputBorder(),
                     labelText: 'Lyrics & solfège',

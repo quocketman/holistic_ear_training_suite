@@ -46,6 +46,11 @@ class SolfegeNote {
   /// rounded background underneath, visually clustering them.
   final int? groupId;
 
+  /// Character offset of the source token (in the raw input string) that
+  /// produced this note, or -1 when unknown. Lets the editor map the text
+  /// cursor to the note it's editing so the canvas can follow along.
+  final int sourceStart;
+
   const SolfegeNote({
     required this.syllable,
     required this.chromaticOffset,
@@ -55,6 +60,7 @@ class SolfegeNote {
     this.isLyricOnly = false,
     this.isLineBreak = false,
     this.groupId,
+    this.sourceStart = -1,
   });
 
   /// Total chromatic position from base do (octave 0, offset 0).
@@ -115,21 +121,24 @@ class SolfegeParser {
     final notes = <SolfegeNote>[];
     final unrecognized = <String>[];
 
-    // Whitespace-only split — hyphens stay inside tokens as lyric chars.
-    final tokens = input.split(RegExp(r'\s+')).where((t) => t.isNotEmpty);
-
     int? currentGroup;
     int nextGroupId = 0;
 
-    for (final raw in tokens) {
+    // Iterate non-whitespace runs (hyphens stay inside tokens as lyric
+    // chars). `allMatches` preserves each token's character offset so notes
+    // can carry a `sourceStart` back to the input string.
+    for (final match in RegExp(r'\S+').allMatches(input)) {
+      final raw = match.group(0)!;
+      final tokenStart = match.start;
       // Standalone `[]` is a line break — easier to spot in text than a
       // double pipe, which visually fights the `|`-bracketed group syntax.
       if (raw == '[]') {
-        notes.add(const SolfegeNote(
+        notes.add(SolfegeNote(
           syllable: '',
           chromaticOffset: 0,
           octave: 0,
           isLineBreak: true,
+          sourceStart: tokenStart,
         ));
         continue;
       }
@@ -172,6 +181,7 @@ class SolfegeParser {
             octave: 0,
             isSpacer: true,
             groupId: currentGroup,
+            sourceStart: tokenStart,
           ));
         }
         if (closeAfter) currentGroup = null;
@@ -213,6 +223,7 @@ class SolfegeParser {
           lyric: lyric,
           isLyricOnly: true,
           groupId: currentGroup,
+          sourceStart: tokenStart,
         ));
         if (closeAfter) currentGroup = null;
         continue;
@@ -243,6 +254,7 @@ class SolfegeParser {
         octave: octave,
         lyric: lyric,
         groupId: currentGroup,
+        sourceStart: tokenStart,
       ));
 
       if (closeAfter) currentGroup = null;
