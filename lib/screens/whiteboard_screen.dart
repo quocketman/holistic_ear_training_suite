@@ -968,7 +968,7 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
             // visually; the hearing glyph differentiates "by ear" from
             // the dropdown's "by name".
             IconButton(
-              icon: const Icon(Icons.hearing_outlined),
+              icon: const Icon(Icons.hearing),
               tooltip: 'Find the key by ear',
               onPressed: _openFindTheKey,
             ),
