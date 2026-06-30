@@ -73,6 +73,9 @@ class WhiteboardCanvas extends StatefulWidget {
   /// invert their dark/glow fill accordingly.
   final SolfegeHexTheme theme;
 
+  /// Outline shape of the tokens — hexagon (default) or circle.
+  final SolfegeTokenShape shape;
+
   /// When true, the standalone `||` token splits notes into stacked rows
   /// (sheet-music style). When false (default), line-break markers render
   /// as nothing and the layout stays single-row — the right behavior for
@@ -97,6 +100,7 @@ class WhiteboardCanvas extends StatefulWidget {
     this.onNoteUp,
     this.playingIndex,
     this.theme = SolfegeHexTheme.dark,
+    this.shape = SolfegeTokenShape.hex,
     this.respectLineBreaks = false,
     this.sizeOverride,
   });
@@ -389,13 +393,21 @@ class WhiteboardCanvasState extends State<WhiteboardCanvas> {
           : tileRect;
     }
     final groupBackgrounds = <Widget>[];
-    final padding = ts * 0.18;
-    final radius = ts * 0.35;
+    // Snug fit: a small pad, and corners rounded concentric with the token
+    // outline — the box rounds at the token's radius (ts/2) plus the pad, so
+    // its corners hug the edge tokens with the same curvature instead of
+    // bulging into boxy corner gaps. Clamped to half the shorter side so it
+    // never over-rounds on a thin group.
+    final padding = ts * 0.12;
     final groupTint = isLightTheme
         ? Colors.black.withValues(alpha: 0.08)
         : Colors.white.withValues(alpha: 0.2);
     for (final rect in groupRects.values) {
       final padded = rect.inflate(padding);
+      final radius = math.min(
+        ts / 2 + padding,
+        math.min(padded.width, padded.height) / 2,
+      );
       groupBackgrounds.add(Positioned(
         left: padded.left,
         top: padded.top,
@@ -431,6 +443,7 @@ class WhiteboardCanvasState extends State<WhiteboardCanvas> {
           size: ts,
           state: isGlowing ? SolfegeHexState.glow : SolfegeHexState.dark,
           theme: widget.theme,
+          shape: widget.shape,
         );
         // In vertical mode, rotate the tile 90° clockwise so the hex shape
         // and label rotate together with the layout.

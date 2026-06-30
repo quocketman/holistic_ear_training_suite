@@ -31,6 +31,12 @@ enum SolfegeHexState {
 /// keep good contrast against either background.
 enum SolfegeHexTheme { dark, light }
 
+/// Outline shape of the token. [hex] is the default Tune Indigo look;
+/// [circle] is an alternative for users who prefer a softer/rounder style.
+/// Only the outline geometry changes — fill, stroke, glow, and label logic
+/// are identical.
+enum SolfegeTokenShape { hex, circle }
+
 /// Hexagonal token rendered procedurally to match the Illustrator
 /// `hex_<state>_<syllable>_<octave>.svg` set without bundling SVG assets.
 ///
@@ -43,6 +49,7 @@ class SolfegeHexToken extends StatefulWidget {
   final double size;
   final SolfegeHexState state;
   final SolfegeHexTheme theme;
+  final SolfegeTokenShape shape;
   final VoidCallback? onTapDown;
   final VoidCallback? onTapUp;
 
@@ -53,6 +60,7 @@ class SolfegeHexToken extends StatefulWidget {
     this.size = 80.0,
     this.state = SolfegeHexState.dark,
     this.theme = SolfegeHexTheme.dark,
+    this.shape = SolfegeTokenShape.hex,
     this.onTapDown,
     this.onTapUp,
   });
@@ -125,6 +133,7 @@ class _SolfegeHexTokenState extends State<SolfegeHexToken>
               color: hexColor,
               state: widget.state,
               theme: widget.theme,
+              shape: widget.shape,
             ),
           ),
           // Label fills the hex's safe interior. FittedBox scales the
@@ -178,16 +187,18 @@ class _HexPainter extends CustomPainter {
   final Color color;
   final SolfegeHexState state;
   final SolfegeHexTheme theme;
+  final SolfegeTokenShape shape;
 
   const _HexPainter({
     required this.color,
     required this.state,
     this.theme = SolfegeHexTheme.dark,
+    this.shape = SolfegeTokenShape.hex,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    final path = _flatTopHexPath(size, inset: 0.92);
+    final path = _tokenPath(size, inset: 0.92);
     final isLightTheme = theme == SolfegeHexTheme.light;
 
     // Outer glow drawn first so it sits behind fill + stroke.
@@ -248,6 +259,18 @@ class _HexPainter extends CustomPainter {
     );
   }
 
+  /// Outline path for the configured [shape]. Both shapes use the same
+  /// inset so a circle and a hex occupy the same footprint and the token
+  /// spacing stays identical when the user toggles between them.
+  Path _tokenPath(Size size, {double inset = 0.92}) {
+    if (shape == SolfegeTokenShape.circle) {
+      final center = Offset(size.width / 2, size.height / 2);
+      final radius = (size.width / 2) * inset;
+      return Path()..addOval(Rect.fromCircle(center: center, radius: radius));
+    }
+    return _flatTopHexPath(size, inset: inset);
+  }
+
   /// Flat-top hexagon path: flat edges on top and bottom, vertex points
   /// on left and right. Inset shrinks the hex within the bounding box.
   Path _flatTopHexPath(Size size, {double inset = 0.92}) {
@@ -271,5 +294,8 @@ class _HexPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _HexPainter old) =>
-      old.color != color || old.state != state || old.theme != theme;
+      old.color != color ||
+      old.state != state ||
+      old.theme != theme ||
+      old.shape != shape;
 }

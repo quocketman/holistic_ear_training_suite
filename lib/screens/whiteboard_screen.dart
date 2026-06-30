@@ -37,6 +37,7 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
   static String _persistedTitle = '';
   static CanvasJustify _persistedJustify = CanvasJustify.left;
   static SolfegeHexTheme _persistedTheme = SolfegeHexTheme.dark;
+  static SolfegeTokenShape _persistedShape = SolfegeTokenShape.hex;
   // Session-scoped — resets on page reload. Suppresses the welcome modal
   // after the user has dismissed it once in this browser tab.
   static bool _welcomeShown = false;
@@ -86,6 +87,7 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
   );
   CanvasJustify _justify = CanvasJustify.left;
   SolfegeHexTheme _theme = SolfegeHexTheme.dark;
+  SolfegeTokenShape _shape = SolfegeTokenShape.hex;
   bool _exporting = false;
   // While true, the off-screen export canvas renders with the light theme
   // regardless of `_theme`. Set transiently around a PDF download so the
@@ -111,6 +113,7 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
     _titleController = TextEditingController(text: _persistedTitle);
     _justify = _persistedJustify;
     _theme = _persistedTheme;
+    _shape = _persistedShape;
     if (initialText.isNotEmpty) {
       _parsed = SolfegeParser.parse(initialText);
     }
@@ -140,6 +143,7 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
     _persistedTitle = _titleController.text;
     _persistedJustify = _justify;
     _persistedTheme = _theme;
+    _persistedShape = _shape;
     for (final h in _activeNotes.values) {
       h.release();
     }
@@ -407,6 +411,43 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
           filenamePrefix: _exportFilenamePrefix(),
         ),
       );
+
+  /// Shows the end-user a preview of exactly what the chosen format will
+  /// produce — same multi-row line-break layout, page aspect, and theme as
+  /// the real export — before they commit to saving. PDF previews letter
+  /// portrait on a white background; PNG previews the on-screen theme at the
+  /// layout's native aspect. Save kicks off the existing capture path.
+  void _showExportPreview({required bool isPdf}) {
+    if (_parsed.notes.isEmpty || _exporting) return;
+    final layout = _resolvedLayout(context);
+    final exportSize = isPdf ? _letterExportSize(layout) : layout.exportSize;
+    final previewTheme = isPdf ? SolfegeHexTheme.light : _theme;
+    showDialog<void>(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.6),
+      builder: (ctx) => _ExportPreviewDialog(
+        notes: _parsed.notes,
+        layout: layout,
+        exportSize: exportSize,
+        theme: previewTheme,
+        shape: _shape,
+        justify: _justify,
+        canvasTitle: _titleController.text.trim(),
+        headerLabel: isPdf
+            ? 'PDF preview — letter, white background'
+            : 'PNG preview — matches current theme',
+        saveLabel: isPdf ? 'Save PDF' : 'Save PNG',
+        onSave: () {
+          Navigator.of(ctx).pop();
+          if (isPdf) {
+            _downloadPdf();
+          } else {
+            _downloadPng();
+          }
+        },
+      ),
+    );
+  }
 
   // ── KEY + OCTAVE pickers (live in the AppBar leading row) ─────────────
 
@@ -725,6 +766,15 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
           ? SolfegeHexTheme.light
           : SolfegeHexTheme.dark;
       _persistedTheme = _theme;
+    });
+  }
+
+  void _toggleShape() {
+    setState(() {
+      _shape = _shape == SolfegeTokenShape.hex
+          ? SolfegeTokenShape.circle
+          : SolfegeTokenShape.hex;
+      _persistedShape = _shape;
     });
   }
 
@@ -1085,9 +1135,9 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
             onSelected: (value) {
               switch (value) {
                 case 'pdf':
-                  _downloadPdf();
+                  _showExportPreview(isPdf: true);
                 case 'png':
-                  _downloadPng();
+                  _showExportPreview(isPdf: false);
               }
             },
             itemBuilder: (_) => const [
@@ -1148,6 +1198,15 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
             icon: Icon(_justifyIcon),
             tooltip: 'Align ($_justifyLabel)',
             onPressed: _cycleJustify,
+          ),
+          IconButton(
+            icon: Icon(_shape == SolfegeTokenShape.hex
+                ? Icons.circle_outlined
+                : Icons.hexagon_outlined),
+            tooltip: _shape == SolfegeTokenShape.hex
+                ? 'Use circle tokens'
+                : 'Use hexagon tokens',
+            onPressed: _toggleShape,
           ),
           IconButton(
             icon: Icon(_theme == SolfegeHexTheme.dark
@@ -1253,6 +1312,7 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
                         onNoteUp: _onNoteUp,
                         playingIndex: _playIndex,
                         theme: _theme,
+                        shape: _shape,
                       ),
                     ),
                     // Help panel — slides in from the right edge of the
@@ -1328,6 +1388,7 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
                 title: _titleController.text.trim(),
                 justify: _justify,
                 theme: _forceExportLight ? SolfegeHexTheme.light : _theme,
+                shape: _shape,
                 respectLineBreaks: true,
                 sizeOverride: _exportSizeOverride,
               ),
@@ -1724,6 +1785,128 @@ class _WelcomeModal extends StatelessWidget {
 /// its own navigator route so it paints above any in-flight popup-menu
 /// close animation — users see "Generating PDF…" + progress immediately
 /// instead of staring at a frozen-looking dropdown.
+/// End-user preview of a pending export. Renders the real export canvas
+/// (multi-row line breaks, page aspect, theme) scaled to fit the dialog,
+/// with Cancel / Save. Save delegates to the existing capture path.
+class _ExportPreviewDialog extends StatelessWidget {
+  final List<SolfegeNote> notes;
+  final CanvasLayout layout;
+  final Size exportSize;
+  final SolfegeHexTheme theme;
+  final SolfegeTokenShape shape;
+  final CanvasJustify justify;
+  final String canvasTitle;
+  final String headerLabel;
+  final String saveLabel;
+  final VoidCallback onSave;
+
+  const _ExportPreviewDialog({
+    required this.notes,
+    required this.layout,
+    required this.exportSize,
+    required this.theme,
+    required this.shape,
+    required this.justify,
+    required this.canvasTitle,
+    required this.headerLabel,
+    required this.saveLabel,
+    required this.onSave,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    final accent = ToneTokenColors.getColor(7); // so-blue
+    return Dialog(
+      backgroundColor: const Color(0xFF1A1A1A),
+      insetPadding: const EdgeInsets.all(24),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: media.size.width * 0.9,
+          maxHeight: media.size.height * 0.88,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.visibility_outlined,
+                      color: Colors.white, size: 20),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      headerLabel,
+                      style: GoogleFonts.sourceSans3(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Flexible(
+                child: Center(
+                  child: AspectRatio(
+                    aspectRatio: exportSize.width / exportSize.height,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.15),
+                        ),
+                      ),
+                      child: FittedBox(
+                        fit: BoxFit.contain,
+                        child: SizedBox.fromSize(
+                          size: exportSize,
+                          child: WhiteboardCanvas(
+                            notes: notes,
+                            layout: layout,
+                            title: canvasTitle,
+                            justify: justify,
+                            theme: theme,
+                            shape: shape,
+                            respectLineBreaks: true,
+                            sizeOverride: exportSize,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: Text(
+                      'Cancel',
+                      style: GoogleFonts.sourceSans3(color: Colors.white70),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton.icon(
+                    onPressed: onSave,
+                    icon: const Icon(Icons.file_download_outlined, size: 18),
+                    label: Text(saveLabel),
+                    style: FilledButton.styleFrom(backgroundColor: accent),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _ExportProgressDialog extends StatelessWidget {
   final String label;
   const _ExportProgressDialog({required this.label});
