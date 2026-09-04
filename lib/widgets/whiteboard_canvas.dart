@@ -30,6 +30,14 @@ const double _systemBarPadFactor = 1.0; // padding above AND below the bar
 const double _systemBandFactor =
     _systemBarThicknessFactor + 2 * _systemBarPadFactor;
 
+/// On-screen (preview) token sizing treats the pitch axis as always at least
+/// this many semitones tall. Effect: every melody whose range fits within
+/// this window renders at ONE stable token size, instead of the token
+/// zooming in/out each time a note widens or narrows the range. An octave
+/// (12) matches the comfortable baseline; melodies wider than the window
+/// still shrink to fit. Export sizing is unaffected — it uses the real range.
+const double _standardPreviewPitchWindow = 12;
+
 extension CanvasLayoutSize on CanvasLayout {
   /// Content area (excluding title).
   Size get contentSize => switch (this) {
@@ -589,15 +597,22 @@ class WhiteboardCanvasState extends State<WhiteboardCanvas> {
     final bool reserveBands = widget.respectLineBreaks &&
         rowCount > 1 &&
         widget.layout == CanvasLayout.horizontal;
+    // On-screen: hold the token size stable by sizing as if the pitch axis is
+    // always at least one octave tall, so notes within an octave don't rescale
+    // the board. Export keeps the true range so it packs tightly.
+    final double effectivePitchRange = isPreview
+        ? math.max(pitchRange.toDouble(), _standardPreviewPitchWindow)
+        : pitchRange.toDouble();
     final double pitchDenom = rowCount *
-            (pitchRange +
+            (effectivePitchRange +
                 _chromaticSpread *
                     (1 + (reserveLyricBelow ? lyricReserveFactor : 0))) +
         _chromaticSpread *
             (reserveBands ? (rowCount - 1) * _systemBandFactor : 0);
-    final maxFromPitch = pitchRange > 0 || reserveLyricBelow || reserveBands
-        ? fullPitchAxisLength * _chromaticSpread / pitchDenom
-        : fullPitchAxisLength;
+    final maxFromPitch =
+        effectivePitchRange > 0 || reserveLyricBelow || reserveBands
+            ? fullPitchAxisLength * _chromaticSpread / pitchDenom
+            : fullPitchAxisLength;
 
     return [widget.tokenSize, maxFromTime, maxFromPitch]
         .reduce((a, b) => a < b ? a : b);

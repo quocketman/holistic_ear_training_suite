@@ -14,13 +14,15 @@ import '../models/synth_parameters.dart';
 import '../models/tone_token_colors.dart';
 import '../services/audio_service.dart';
 import '../services/pdf_export.dart' show
-    exportRepaintBoundaryToPdf, exportRepaintBoundaryToPng;
+    exportRepaintBoundaryToPng, exportPrintPagesToPdf, captureBoundaryToPngBytes;
 import '../services/signup_service.dart';
 import '../services/url_state.dart';
+import '../services/whiteboard_print_layout.dart';
 import '../utils/solfege_parser.dart';
 import '../widgets/solfege_highlight_controller.dart';
 import 'sound_design_screen.dart';
 import '../widgets/find_the_key_modal.dart';
+import '../widgets/print_score_page.dart';
 import '../widgets/solfege_hex_token.dart';
 import '../widgets/whiteboard_canvas.dart';
 
@@ -37,7 +39,7 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
   static String _persistedTitle = '';
   static CanvasJustify _persistedJustify = CanvasJustify.left;
   static SolfegeHexTheme _persistedTheme = SolfegeHexTheme.dark;
-  static SolfegeTokenShape _persistedShape = SolfegeTokenShape.hex;
+  static SolfegeTokenShape _persistedShape = SolfegeTokenShape.circle;
   // Session-scoped — resets on page reload. Suppresses the welcome modal
   // after the user has dismissed it once in this browser tab.
   static bool _welcomeShown = false;
@@ -94,9 +96,16 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
   // print-bound output is always on a white background.
   bool _forceExportLight = false;
   // When non-null, the off-screen export canvas renders at this size
-  // instead of [CanvasLayout.exportSize]. Used to retarget PDFs to letter
-  // aspect (more vertical room → bigger tokens in multi-row layouts).
+  // instead of [CanvasLayout.exportSize]. Used to retarget PNG exports.
   Size? _exportSizeOverride;
+
+  // Multi-page print (PDF) job. When [_printJob] is non-null, the build
+  // renders one off-screen [PrintScorePage] per page (each in its own
+  // RepaintBoundary keyed by [_printPageKeys]) so they can be captured to
+  // images and assembled into a multi-page letter PDF.
+  static const PrintMetrics _printMetrics = PrintMetrics();
+  PrintJob? _printJob;
+  List<GlobalKey> _printPageKeys = const [];
 
   @override
   void initState() {
@@ -320,11 +329,6 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
         : 'whiteboard';
   }
 
-  /// Portrait letter at ~200 dpi (1700 × 2200). Matches standard sheet-music
-  /// orientation: each horizontal system stacks down the page, more room
-  /// for multi-row layouts than a landscape sheet would give.
-  Size _letterExportSize(CanvasLayout layout) => const Size(1700, 2200);
-
   /// Common pre/post around a capture — toggles the off-screen canvas to
   /// the requested theme + size and waits a frame so the RepaintBoundary
   /// repaints before [run] captures it.
@@ -388,19 +392,69 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
     }
   }
 
-  Future<void> _downloadPdf() {
-    final layout = _resolvedLayout(context);
-    return _runExport(
-      forceLight: true,
-      label: 'Generating PDF…',
-      sizeOverride: _letterExportSize(layout),
-      run: () => exportRepaintBoundaryToPdf(
-        boundaryKey: _canvasKey,
-        filenamePrefix: _exportFilenamePrefix(),
-        title: _titleController.text.trim(),
-        solfegeText: _controller.text,
-      ),
+  /// Print PDF: fixed token size, auto-wrapped systems, flowed across as many
+  /// letter pages as needed. Paginates, renders each page off-screen, captures
+  /// each to an image, and assembles the multi-page PDF.
+  Future<void> _downloadPdf() async {
+    if (_parsed.notes.isEmpty || _exporting) return;
+    final job = paginate(_parsed.notes, _printMetrics);
+
+    // Phase 1 — show the progress dialog FIRST with no heavy rebuild, and give
+    // it frames to actually paint before the expensive page render starts.
+    setState(() => _exporting = true);
+    // ignore: unawaited_futures
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.black.withValues(alpha: 0.55),
+      builder: (_) => const _ExportProgressDialog(label: 'Generating PDF…'),
     );
+    await WidgetsBinding.instance.endOfFrame;
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+
+    // Phase 2 — now render the off-screen print pages, then capture them.
+    setState(() {
+      _printJob = job;
+      _printPageKeys = [for (var i = 0; i < job.pageCount; i++) GlobalKey()];
+    });
+    await WidgetsBinding.instance.endOfFrame;
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+
+    try {
+      final images = <Uint8List>[];
+      for (final key in _printPageKeys) {
+        images.add(await captureBoundaryToPngBytes(boundaryKey: key));
+      }
+      final destination = await exportPrintPagesToPdf(
+        pageImages: images,
+        filenamePrefix: _exportFilenamePrefix(),
+        solfegeText: _controller.text,
+        title: _titleController.text.trim(),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Saved: $destination')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      final msg = e.toString();
+      if (!msg.contains('Save cancelled')) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Export failed: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        setState(() {
+          _exporting = false;
+          _printJob = null;
+          _printPageKeys = const [];
+        });
+      }
+    }
   }
 
   Future<void> _downloadPng() => _runExport(
@@ -420,22 +474,46 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
   void _showExportPreview({required bool isPdf}) {
     if (_parsed.notes.isEmpty || _exporting) return;
     final layout = _resolvedLayout(context);
-    final exportSize = isPdf ? _letterExportSize(layout) : layout.exportSize;
-    final previewTheme = isPdf ? SolfegeHexTheme.light : _theme;
+
+    final Size exportSize;
+    final Widget content;
+    final String headerLabel;
+    if (isPdf) {
+      // Preview the first printable page exactly as it will render.
+      final job = paginate(_parsed.notes, _printMetrics);
+      exportSize = Size(_printMetrics.pageWidth, _printMetrics.pageHeight);
+      content = PrintScorePage(
+        metrics: _printMetrics,
+        page: job.pages.first,
+        pageIndex: 0,
+        title: _titleController.text.trim(),
+        shape: _shape,
+      );
+      headerLabel = job.pageCount > 1
+          ? 'PDF preview — page 1 of ${job.pageCount} (letter)'
+          : 'PDF preview — letter';
+    } else {
+      exportSize = layout.exportSize;
+      content = WhiteboardCanvas(
+        notes: _parsed.notes,
+        layout: layout,
+        title: _titleController.text.trim(),
+        justify: _justify,
+        theme: _theme,
+        shape: _shape,
+        respectLineBreaks: true,
+        sizeOverride: exportSize,
+      );
+      headerLabel = 'PNG preview — matches current theme';
+    }
+
     showDialog<void>(
       context: context,
       barrierColor: Colors.black.withValues(alpha: 0.6),
       builder: (ctx) => _ExportPreviewDialog(
-        notes: _parsed.notes,
-        layout: layout,
         exportSize: exportSize,
-        theme: previewTheme,
-        shape: _shape,
-        justify: _justify,
-        canvasTitle: _titleController.text.trim(),
-        headerLabel: isPdf
-            ? 'PDF preview — letter, white background'
-            : 'PNG preview — matches current theme',
+        content: content,
+        headerLabel: headerLabel,
         saveLabel: isPdf ? 'Save PDF' : 'Save PNG',
         onSave: () {
           Navigator.of(ctx).pop();
@@ -1394,6 +1472,28 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
               ),
             ),
           ),
+          // Off-screen print pages for the multi-page PDF export. One
+          // RepaintBoundary per page; captured individually then assembled.
+          if (_printJob != null)
+            Positioned(
+              left: -_printMetrics.pageWidth - 100,
+              top: -100,
+              child: Column(
+                children: [
+                  for (var i = 0; i < _printJob!.pages.length; i++)
+                    RepaintBoundary(
+                      key: _printPageKeys[i],
+                      child: PrintScorePage(
+                        metrics: _printMetrics,
+                        page: _printJob!.pages[i],
+                        pageIndex: i,
+                        title: _titleController.text.trim(),
+                        shape: _shape,
+                      ),
+                    ),
+                ],
+              ),
+            ),
         ],
       ),
       ),
@@ -1789,25 +1889,19 @@ class _WelcomeModal extends StatelessWidget {
 /// (multi-row line breaks, page aspect, theme) scaled to fit the dialog,
 /// with Cancel / Save. Save delegates to the existing capture path.
 class _ExportPreviewDialog extends StatelessWidget {
-  final List<SolfegeNote> notes;
-  final CanvasLayout layout;
+  /// Natural pixel size of [content] — used for the preview's aspect ratio.
   final Size exportSize;
-  final SolfegeHexTheme theme;
-  final SolfegeTokenShape shape;
-  final CanvasJustify justify;
-  final String canvasTitle;
+
+  /// The exact fixed-size content that will be captured (a WhiteboardCanvas
+  /// for PNG, a PrintScorePage for PDF). Scaled to fit the dialog.
+  final Widget content;
   final String headerLabel;
   final String saveLabel;
   final VoidCallback onSave;
 
   const _ExportPreviewDialog({
-    required this.notes,
-    required this.layout,
     required this.exportSize,
-    required this.theme,
-    required this.shape,
-    required this.justify,
-    required this.canvasTitle,
+    required this.content,
     required this.headerLabel,
     required this.saveLabel,
     required this.onSave,
@@ -1863,16 +1957,7 @@ class _ExportPreviewDialog extends StatelessWidget {
                         fit: BoxFit.contain,
                         child: SizedBox.fromSize(
                           size: exportSize,
-                          child: WhiteboardCanvas(
-                            notes: notes,
-                            layout: layout,
-                            title: canvasTitle,
-                            justify: justify,
-                            theme: theme,
-                            shape: shape,
-                            respectLineBreaks: true,
-                            sizeOverride: exportSize,
-                          ),
+                          child: content,
                         ),
                       ),
                     ),
@@ -1895,7 +1980,10 @@ class _ExportPreviewDialog extends StatelessWidget {
                     onPressed: onSave,
                     icon: const Icon(Icons.file_download_outlined, size: 18),
                     label: Text(saveLabel),
-                    style: FilledButton.styleFrom(backgroundColor: accent),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: accent,
+                      foregroundColor: Colors.white,
+                    ),
                   ),
                 ],
               ),

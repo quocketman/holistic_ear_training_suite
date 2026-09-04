@@ -30,6 +30,14 @@ Future<String> exportRepaintBoundaryToPng({
   return platform.savePngBytes(filename: filename, bytes: pngBytes);
 }
 
+/// Captures the [RepaintBoundary] at [boundaryKey] to raw PNG bytes (no file
+/// save). Used by the multi-page print export to grab each page image.
+Future<Uint8List> captureBoundaryToPngBytes({
+  required GlobalKey boundaryKey,
+  double pixelRatio = 2.0,
+}) =>
+    _captureBoundaryPng(boundaryKey: boundaryKey, pixelRatio: pixelRatio);
+
 Future<Uint8List> _captureBoundaryPng({
   required GlobalKey boundaryKey,
   required double pixelRatio,
@@ -87,6 +95,66 @@ Future<String> exportRepaintBoundaryToPdf({
   final filename = '${filenamePrefix}_$timestamp.pdf';
 
   return platform.savePdfBytes(filename: filename, bytes: pdfBytes);
+}
+
+/// Assembles a multi-page letter PDF from pre-rendered, letter-proportioned
+/// page images (each already carries its 0.75" margins as whitespace). Each
+/// page is full-bleed; a small clickable link sits in the bottom margin that
+/// re-opens the melody in the Whiteboard.
+Future<String> exportPrintPagesToPdf({
+  required List<Uint8List> pageImages,
+  required String filenamePrefix,
+  required String solfegeText,
+  String? title,
+}) async {
+  final pdf = pw.Document(
+    title: title?.isNotEmpty == true ? title : 'Tune Indigo Whiteboard',
+    author: 'Tune Indigo Whiteboard',
+  );
+
+  final linkUrl = solfegeText.trim().isEmpty
+      ? 'https://whiteboard.tuneindigo.com'
+      : buildSolfegeShareUrl(solfegeText.trim());
+
+  for (final bytes in pageImages) {
+    final image = pw.MemoryImage(bytes);
+    pdf.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.letter,
+        margin: pw.EdgeInsets.zero,
+        build: (pw.Context context) {
+          return pw.Stack(
+            children: [
+              pw.Positioned.fill(child: pw.Image(image, fit: pw.BoxFit.fill)),
+              pw.Positioned(
+                bottom: 22,
+                left: 0,
+                right: 0,
+                child: pw.Center(
+                  child: pw.UrlLink(
+                    destination: linkUrl,
+                    child: pw.Text(
+                      'whiteboard.tuneindigo.com',
+                      style: const pw.TextStyle(
+                        fontSize: 10,
+                        color: PdfColors.blue700,
+                        decoration: pw.TextDecoration.underline,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  final timestamp =
+      DateTime.now().toIso8601String().replaceAll(':', '-').split('.').first;
+  final filename = '${filenamePrefix}_$timestamp.pdf';
+  return platform.savePdfBytes(filename: filename, bytes: await pdf.save());
 }
 
 Future<Uint8List> _buildPdf({
