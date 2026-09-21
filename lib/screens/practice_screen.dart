@@ -14,18 +14,18 @@ import '../utils/ladder_layout.dart';
 /// Full chromatic scale — used by the whole-tone layout.
 /// Index 0 = do, 1–11 = di through ti, 12 = low do (one octave below).
 final _chromaticScale = [
-  NoteNugget(scaleDegree: 1, chromaticAlteration: 0),            // 0: do
-  NoteNugget(scaleDegree: 1, chromaticAlteration: 1),            // 1: di/ra
-  NoteNugget(scaleDegree: 2, chromaticAlteration: 0),            // 2: re
-  NoteNugget(scaleDegree: 3, chromaticAlteration: -1),           // 3: me
-  NoteNugget(scaleDegree: 3, chromaticAlteration: 0),            // 4: mi
-  NoteNugget(scaleDegree: 4, chromaticAlteration: 0),            // 5: fa
-  NoteNugget(scaleDegree: 4, chromaticAlteration: 1),            // 6: fi
-  NoteNugget(scaleDegree: 5, chromaticAlteration: 0),            // 7: so
-  NoteNugget(scaleDegree: 6, chromaticAlteration: -1),           // 8: le
-  NoteNugget(scaleDegree: 6, chromaticAlteration: 0),            // 9: la
-  NoteNugget(scaleDegree: 7, chromaticAlteration: -1),           // 10: te
-  NoteNugget(scaleDegree: 7, chromaticAlteration: 0),            // 11: ti
+  NoteNugget(scaleDegree: 1, chromaticAlteration: 0), // 0: do
+  NoteNugget(scaleDegree: 1, chromaticAlteration: 1), // 1: di/ra
+  NoteNugget(scaleDegree: 2, chromaticAlteration: 0), // 2: re
+  NoteNugget(scaleDegree: 3, chromaticAlteration: -1), // 3: me
+  NoteNugget(scaleDegree: 3, chromaticAlteration: 0), // 4: mi
+  NoteNugget(scaleDegree: 4, chromaticAlteration: 0), // 5: fa
+  NoteNugget(scaleDegree: 4, chromaticAlteration: 1), // 6: fi
+  NoteNugget(scaleDegree: 5, chromaticAlteration: 0), // 7: so
+  NoteNugget(scaleDegree: 6, chromaticAlteration: -1), // 8: le
+  NoteNugget(scaleDegree: 6, chromaticAlteration: 0), // 9: la
+  NoteNugget(scaleDegree: 7, chromaticAlteration: -1), // 10: te
+  NoteNugget(scaleDegree: 7, chromaticAlteration: 0), // 11: ti
   NoteNugget(scaleDegree: 1, chromaticAlteration: 0, octave: -1), // 12: low do
 ];
 
@@ -64,7 +64,8 @@ class PracticeScreen extends StatefulWidget {
   }) : levelSpecs = levelSpecs ?? _defaultLevelSpecs;
 
   LevelSpecs? get nextLevelSpecs {
-    if (allLevels != null && currentLevelIndex != null &&
+    if (allLevels != null &&
+        currentLevelIndex != null &&
         currentLevelIndex! + 1 < allLevels!.length) {
       return allLevels![currentLevelIndex! + 1];
     }
@@ -81,7 +82,8 @@ class _PracticeScreenState extends State<PracticeScreen> {
   bool _pulsing = false;
   bool _roundActive = false;
   bool _sequencePlaying = false;
-  bool _listeningToSequence = false; // true while multi-note sequence is sounding
+  bool _listeningToSequence =
+      false; // true while multi-note sequence is sounding
   int _activeSequenceIndex = -1; // which sequence token is currently sounding
   bool _showRoundEnd = false;
   NoteNugget? _glowingNugget;
@@ -189,10 +191,17 @@ class _PracticeScreenState extends State<PracticeScreen> {
     _isPlayingQuestion = true;
     final musicalState = context.read<MusicalState>();
 
-    setState(() { _pulsing = true; _hideQuestionPoints = false; _listeningToSequence = true; });
+    setState(() {
+      _pulsing = true;
+      _hideQuestionPoints = false;
+      _listeningToSequence = true;
+    });
 
     for (int i = 0; i < sequence.length; i++) {
-      if (!mounted) { _isPlayingQuestion = false; return; }
+      if (!mounted) {
+        _isPlayingQuestion = false;
+        return;
+      }
       final midiNote = musicalState.getMidiNote(sequence[i]);
       setState(() => _activeSequenceIndex = i);
       await _audioService.playTone(midiNote);
@@ -200,7 +209,10 @@ class _PracticeScreenState extends State<PracticeScreen> {
       await Future.delayed(const Duration(milliseconds: 400));
     }
 
-    if (!mounted) { _isPlayingQuestion = false; return; }
+    if (!mounted) {
+      _isPlayingQuestion = false;
+      return;
+    }
     setState(() {
       _pulsing = false;
       _listeningToSequence = false;
@@ -268,26 +280,37 @@ class _PracticeScreenState extends State<PracticeScreen> {
 
     for (int i = 0; i < 2; i++) {
       if (!mounted) return;
-      setState(() { _pulsing = true; _wrongNugget = null; });
+      setState(() {
+        _pulsing = true;
+        _wrongNugget = null;
+      });
       _audioService.playTone(questionMidi);
       await Future.delayed(const Duration(milliseconds: 500));
 
       if (!mounted) return;
-      setState(() { _pulsing = false; _wrongNugget = wrongNugget; });
+      setState(() {
+        _pulsing = false;
+        _wrongNugget = wrongNugget;
+      });
       _audioService.playTone(wrongMidi);
       await Future.delayed(const Duration(milliseconds: 500));
     }
 
     if (!mounted) return;
-    setState(() { _wrongNugget = null; _sequencePlaying = false; });
+    setState(() {
+      _wrongNugget = null;
+      _sequencePlaying = false;
+    });
   }
 
   void _flyPointsToToken(NoteNugget nugget, int points) {
-    final playBox = _playButtonKey.currentContext?.findRenderObject() as RenderBox?;
+    final playBox =
+        _playButtonKey.currentContext?.findRenderObject() as RenderBox?;
     if (playBox == null) return;
     final playPos = playBox.localToGlobal(Offset.zero);
     final playSize = playBox.size;
-    final from = Offset(playPos.dx + playSize.width / 2, playPos.dy + playSize.height / 2);
+    final from = Offset(
+        playPos.dx + playSize.width / 2, playPos.dy + playSize.height / 2);
 
     final tokenKey = _tokenKeys[nugget];
     if (tokenKey == null) return;
@@ -295,7 +318,8 @@ class _PracticeScreenState extends State<PracticeScreen> {
     if (tokenBox == null) return;
     final tokenPos = tokenBox.localToGlobal(Offset.zero);
     final tokenSize = tokenBox.size;
-    final to = Offset(tokenPos.dx + tokenSize.width / 2, tokenPos.dy + tokenSize.height / 2);
+    final to = Offset(
+        tokenPos.dx + tokenSize.width / 2, tokenPos.dy + tokenSize.height / 2);
 
     final mode = context.read<MusicalState>().currentMode;
     final color = ToneTokenColors.getColor(nugget.getChromaticOffset(mode));
@@ -318,11 +342,13 @@ class _PracticeScreenState extends State<PracticeScreen> {
   }
 
   void _flyHexToToken(NoteNugget nugget) {
-    final playBox = _playButtonKey.currentContext?.findRenderObject() as RenderBox?;
+    final playBox =
+        _playButtonKey.currentContext?.findRenderObject() as RenderBox?;
     if (playBox == null) return;
     final playPos = playBox.localToGlobal(Offset.zero);
     final playSize = playBox.size;
-    final from = Offset(playPos.dx + playSize.width / 2, playPos.dy + playSize.height / 2);
+    final from = Offset(
+        playPos.dx + playSize.width / 2, playPos.dy + playSize.height / 2);
 
     final tokenKey = _tokenKeys[nugget];
     if (tokenKey == null) return;
@@ -330,7 +356,8 @@ class _PracticeScreenState extends State<PracticeScreen> {
     if (tokenBox == null) return;
     final tokenPos = tokenBox.localToGlobal(Offset.zero);
     final tokenSize = tokenBox.size;
-    final to = Offset(tokenPos.dx + tokenSize.width / 2, tokenPos.dy + tokenSize.height / 2);
+    final to = Offset(
+        tokenPos.dx + tokenSize.width / 2, tokenPos.dy + tokenSize.height / 2);
 
     final color = _questionTokenColor;
 
@@ -377,7 +404,8 @@ class _PracticeScreenState extends State<PracticeScreen> {
                                   builder: (_) => PracticeScreen(
                                     levelSpecs: next,
                                     allLevels: widget.allLevels,
-                                    currentLevelIndex: widget.currentLevelIndex! + 1,
+                                    currentLevelIndex:
+                                        widget.currentLevelIndex! + 1,
                                   ),
                                 ),
                               );
@@ -410,7 +438,12 @@ class _PracticeScreenState extends State<PracticeScreen> {
                             pulsing: _pulsing,
                             showIcon: !_roundActive,
                             color: _questionTokenColor,
-                            pointValue: _roundActive && !_hideQuestionPoints && widget.levelSpecs.levelType != LevelType.warmUp ? _session.currentQuestionPoints : null,
+                            pointValue: _roundActive &&
+                                    !_hideQuestionPoints &&
+                                    widget.levelSpecs.levelType !=
+                                        LevelType.warmUp
+                                ? _session.currentQuestionPoints
+                                : null,
                           ),
                         ),
                       ),
@@ -442,10 +475,10 @@ class _PracticeScreenState extends State<PracticeScreen> {
                         Navigator.of(context).pushReplacement(
                           MaterialPageRoute(
                             builder: (_) => PracticeScreen(
-                                    levelSpecs: next,
-                                    allLevels: widget.allLevels,
-                                    currentLevelIndex: widget.currentLevelIndex! + 1,
-                                  ),
+                              levelSpecs: next,
+                              allLevels: widget.allLevels,
+                              currentLevelIndex: widget.currentLevelIndex! + 1,
+                            ),
                           ),
                         );
                       } else {
@@ -497,9 +530,13 @@ class _ScoreBar extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        _chip(Icons.music_note, '${session.questionsAnswered}/${specs.questionsPerRound}', Colors.white70),
+        _chip(
+            Icons.music_note,
+            '${session.questionsAnswered}/${specs.questionsPerRound}',
+            Colors.white70),
         const SizedBox(width: 24),
-        _chip(Icons.star_outline, '${session.totalPoints}', _pointsColor(session, specs)),
+        _chip(Icons.star_outline, '${session.totalPoints}',
+            _pointsColor(session, specs)),
       ],
     );
   }
@@ -515,12 +552,13 @@ class _ScoreBar extends StatelessWidget {
       children: [
         Icon(icon, color: color, size: 20),
         const SizedBox(width: 4),
-        Text(label, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: color)),
+        Text(label,
+            style: TextStyle(
+                fontSize: 18, fontWeight: FontWeight.bold, color: color)),
       ],
     );
   }
 }
-
 
 /// Row of hexagons at the top of the game board showing the sequence length.
 /// Each hex starts white and fills with the note's color when correctly answered.
@@ -547,7 +585,8 @@ class _SequenceTokenRow extends StatelessWidget {
         Color fillColor;
         if (i < answered.length && answered[i] != null) {
           // Answered correctly — show the note's color.
-          fillColor = ToneTokenColors.getColor(answered[i]!.getChromaticOffset(mode));
+          fillColor =
+              ToneTokenColors.getColor(answered[i]!.getChromaticOffset(mode));
         } else {
           fillColor = Colors.white;
         }
@@ -573,7 +612,13 @@ class _PlayButton extends StatefulWidget {
   final bool showIcon;
   final Color color;
   final int? pointValue;
-  const _PlayButton({super.key, required this.onPlay, required this.pulsing, this.showIcon = true, this.color = Colors.white, this.pointValue});
+  const _PlayButton(
+      {super.key,
+      required this.onPlay,
+      required this.pulsing,
+      this.showIcon = true,
+      this.color = Colors.white,
+      this.pointValue});
 
   @override
   State<_PlayButton> createState() => _PlayButtonState();
@@ -626,14 +671,20 @@ class _PlayButtonState extends State<_PlayButton>
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             boxShadow: widget.pulsing
-                ? [BoxShadow(color: Colors.white.withValues(alpha: 0.9), blurRadius: 24, spreadRadius: 8)]
+                ? [
+                    BoxShadow(
+                        color: Colors.white.withValues(alpha: 0.9),
+                        blurRadius: 24,
+                        spreadRadius: 8)
+                  ]
                 : [],
           ),
           child: CustomPaint(
             painter: _HexFillPainter(widget.color),
             child: Center(
               child: widget.showIcon
-                  ? Icon(Icons.play_arrow, color: ToneTokenColors.faColor, size: 36)
+                  ? Icon(Icons.play_arrow,
+                      color: ToneTokenColors.faColor, size: 36)
                   : widget.pointValue != null
                       ? Text(
                           '${widget.pointValue}',
@@ -712,33 +763,34 @@ class _TokenGrid extends StatelessWidget {
     return SingleChildScrollView(
       child: Builder(
         builder: (context) {
-        final size = Size(gridWidth, gridHeight);
-        final positions = positionsForSlots(
-          slots: slots,
-          size: size,
-          tokenSize: tokenSize,
-        );
+          final size = Size(gridWidth, gridHeight);
+          final positions = positionsForSlots(
+            slots: slots,
+            size: size,
+            tokenSize: tokenSize,
+          );
 
-        return SizedBox(
-          width: gridWidth,
-          height: gridHeight,
-          child: Stack(
-            children: [
-              for (int i = 0; i < slots.length; i++)
-                Positioned(
-                  left: positions[i].dx - tokenSize / 2,
-                  top: positions[i].dy - tokenSize / 2,
-                  width: tokenSize,
-                  height: tokenSize,
-                  child: _buildToken(slots[i].nugget, slots[i].isActive, tokenSize),
+          return SizedBox(
+            width: gridWidth,
+            height: gridHeight,
+            child: Stack(
+              children: [
+                for (int i = 0; i < slots.length; i++)
+                  Positioned(
+                    left: positions[i].dx - tokenSize / 2,
+                    top: positions[i].dy - tokenSize / 2,
+                    width: tokenSize,
+                    height: tokenSize,
+                    child: _buildToken(
+                        slots[i].nugget, slots[i].isActive, tokenSize),
+                  ),
+                Positioned.fill(
+                  child: Center(child: playButton),
                 ),
-              Positioned.fill(
-                child: Center(child: playButton),
-              ),
-            ],
-          ),
-        );
-      },
+              ],
+            ),
+          );
+        },
       ),
     );
   }
@@ -772,7 +824,8 @@ class _TokenGrid extends StatelessWidget {
     for (int i = 0; i < slots.length; i++) {
       if (slots[i].isActive) toggle *= -1;
       final side = (i == 0 || i == slots.length - 1) ? 0 : toggle;
-      assignedSlots.add((nugget: slots[i].nugget, isActive: slots[i].isActive, side: side));
+      assignedSlots.add(
+          (nugget: slots[i].nugget, isActive: slots[i].isActive, side: side));
     }
 
     const tokenSize = 80.0;
@@ -819,10 +872,9 @@ class _TokenGrid extends StatelessWidget {
       );
     }
 
-    final isGlowing = glowingNugget != null &&
-        nugget.samePitchClass(glowingNugget!);
-    final isWrong = wrongNugget != null &&
-        nugget.samePitchClass(wrongNugget!);
+    final isGlowing =
+        glowingNugget != null && nugget.samePitchClass(glowingNugget!);
+    final isWrong = wrongNugget != null && nugget.samePitchClass(wrongNugget!);
 
     return Opacity(
       opacity: dimmed ? 0.3 : 1.0,
@@ -832,7 +884,12 @@ class _TokenGrid extends StatelessWidget {
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           boxShadow: isWrong
-              ? [BoxShadow(color: Colors.red.withValues(alpha: 0.85), blurRadius: 20, spreadRadius: 6)]
+              ? [
+                  BoxShadow(
+                      color: Colors.red.withValues(alpha: 0.85),
+                      blurRadius: 20,
+                      spreadRadius: 6)
+                ]
               : [],
         ),
         child: ToneToken(
@@ -841,7 +898,7 @@ class _TokenGrid extends StatelessWidget {
           orientation: HexagonOrientation.flatTop,
           glowing: isGlowing,
           outlineOnly: !levelSpecs.answerTokensMakeASound,
-        onTap: () => onTap(nugget),
+          onTap: () => onTap(nugget),
         ),
       ),
     );
@@ -974,7 +1031,10 @@ class _PointsFlyEffectState extends State<_PointsFlyEffect>
                   fontWeight: FontWeight.bold,
                   color: Colors.white,
                   shadows: [
-                    Shadow(offset: Offset(1, 2), blurRadius: 6, color: Colors.black54),
+                    Shadow(
+                        offset: Offset(1, 2),
+                        blurRadius: 6,
+                        color: Colors.black54),
                   ],
                 ),
               ),
@@ -1066,7 +1126,10 @@ class _HexFlyEffectState extends State<_HexFlyEffect>
                             fontWeight: FontWeight.bold,
                             color: Colors.white,
                             shadows: [
-                              Shadow(offset: Offset(1, 1), blurRadius: 3, color: Colors.black45),
+                              Shadow(
+                                  offset: Offset(1, 1),
+                                  blurRadius: 3,
+                                  color: Colors.black45),
                             ],
                           ),
                         ),
@@ -1159,7 +1222,8 @@ class _RoundEndOverlay extends StatelessWidget {
               children: [
                 _hexButton(Icons.replay, Colors.white, onRestart),
                 const SizedBox(width: 24),
-                _hexButton(Icons.arrow_forward, ToneTokenColors.faColor, onNextLevel),
+                _hexButton(
+                    Icons.arrow_forward, ToneTokenColors.faColor, onNextLevel),
               ],
             ),
           ],

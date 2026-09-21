@@ -9,7 +9,6 @@ import '../models/musical_state.dart';
 import '../models/practice_session.dart';
 import '../models/tone_token_colors.dart';
 import '../services/audio_service.dart';
-import '../services/audio/audio_synthesizer.dart';
 import '../utils/hex_grid_builder.dart';
 import '../utils/ladder_layout.dart';
 import '../widgets/tone_token.dart';
@@ -184,14 +183,20 @@ class _LevelCardScreenState extends State<LevelCardScreen> {
     });
 
     for (int i = 0; i < sequence.length; i++) {
-      if (!mounted) { _isPlayingQuestion = false; return; }
+      if (!mounted) {
+        _isPlayingQuestion = false;
+        return;
+      }
       final midiNote = musicalState.getMidiNote(sequence[i]);
       setState(() => _activeSequenceIndex = i);
       await _audioService.playTone(midiNote);
       await Future.delayed(const Duration(milliseconds: 400));
     }
 
-    if (!mounted) { _isPlayingQuestion = false; return; }
+    if (!mounted) {
+      _isPlayingQuestion = false;
+      return;
+    }
     setState(() {
       _pulsing = false;
       _listeningToSequence = false;
@@ -217,18 +222,27 @@ class _LevelCardScreenState extends State<LevelCardScreen> {
 
     for (int i = 0; i < 2; i++) {
       if (!mounted) return;
-      setState(() { _pulsing = true; _wrongNugget = null; });
+      setState(() {
+        _pulsing = true;
+        _wrongNugget = null;
+      });
       _audioService.playTone(questionMidi);
       await Future.delayed(const Duration(milliseconds: 500));
 
       if (!mounted) return;
-      setState(() { _pulsing = false; _wrongNugget = wrongNugget; });
+      setState(() {
+        _pulsing = false;
+        _wrongNugget = wrongNugget;
+      });
       _audioService.playTone(wrongMidi);
       await Future.delayed(const Duration(milliseconds: 500));
     }
 
     if (!mounted) return;
-    setState(() { _wrongNugget = null; _sequencePlaying = false; });
+    setState(() {
+      _wrongNugget = null;
+      _sequencePlaying = false;
+    });
   }
 
   // ── Token tap ──
@@ -305,11 +319,13 @@ class _LevelCardScreenState extends State<LevelCardScreen> {
   // ── Fly animations ──
 
   void _flyPointsToToken(NoteNugget nugget, int points) {
-    final playBox = _playButtonKey.currentContext?.findRenderObject() as RenderBox?;
+    final playBox =
+        _playButtonKey.currentContext?.findRenderObject() as RenderBox?;
     if (playBox == null) return;
     final playPos = playBox.localToGlobal(Offset.zero);
     final playSize = playBox.size;
-    final from = Offset(playPos.dx + playSize.width / 2, playPos.dy + playSize.height / 2);
+    final from = Offset(
+        playPos.dx + playSize.width / 2, playPos.dy + playSize.height / 2);
 
     final tokenKey = _tokenKeys[nugget];
     if (tokenKey == null) return;
@@ -317,7 +333,8 @@ class _LevelCardScreenState extends State<LevelCardScreen> {
     if (tokenBox == null) return;
     final tokenPos = tokenBox.localToGlobal(Offset.zero);
     final tokenSize = tokenBox.size;
-    final to = Offset(tokenPos.dx + tokenSize.width / 2, tokenPos.dy + tokenSize.height / 2);
+    final to = Offset(
+        tokenPos.dx + tokenSize.width / 2, tokenPos.dy + tokenSize.height / 2);
 
     final mode = context.read<MusicalState>().currentMode;
     final color = ToneTokenColors.getColor(nugget.getChromaticOffset(mode));
@@ -325,20 +342,28 @@ class _LevelCardScreenState extends State<LevelCardScreen> {
     _splashEntry?.remove();
     _splashEntry = OverlayEntry(
       builder: (_) => _HexFlyEffect(
-        from: from, to: to, color: color, size: 60.0,
+        from: from,
+        to: to,
+        color: color,
+        size: 60.0,
         label: '+$points',
-        onDone: () { _splashEntry?.remove(); _splashEntry = null; },
+        onDone: () {
+          _splashEntry?.remove();
+          _splashEntry = null;
+        },
       ),
     );
     Overlay.of(context).insert(_splashEntry!);
   }
 
   void _flyHexToToken(NoteNugget nugget) {
-    final playBox = _playButtonKey.currentContext?.findRenderObject() as RenderBox?;
+    final playBox =
+        _playButtonKey.currentContext?.findRenderObject() as RenderBox?;
     if (playBox == null) return;
     final playPos = playBox.localToGlobal(Offset.zero);
     final playSize = playBox.size;
-    final from = Offset(playPos.dx + playSize.width / 2, playPos.dy + playSize.height / 2);
+    final from = Offset(
+        playPos.dx + playSize.width / 2, playPos.dy + playSize.height / 2);
 
     final tokenKey = _tokenKeys[nugget];
     if (tokenKey == null) return;
@@ -346,7 +371,8 @@ class _LevelCardScreenState extends State<LevelCardScreen> {
     if (tokenBox == null) return;
     final tokenPos = tokenBox.localToGlobal(Offset.zero);
     final tokenSize = tokenBox.size;
-    final to = Offset(tokenPos.dx + tokenSize.width / 2, tokenPos.dy + tokenSize.height / 2);
+    final to = Offset(
+        tokenPos.dx + tokenSize.width / 2, tokenPos.dy + tokenSize.height / 2);
 
     final mode = context.read<MusicalState>().currentMode;
     final color = ToneTokenColors.getColor(nugget.getChromaticOffset(mode));
@@ -354,8 +380,14 @@ class _LevelCardScreenState extends State<LevelCardScreen> {
     _splashEntry?.remove();
     _splashEntry = OverlayEntry(
       builder: (_) => _HexFlyEffect(
-        from: from, to: to, color: color, size: 60.0,
-        onDone: () { _splashEntry?.remove(); _splashEntry = null; },
+        from: from,
+        to: to,
+        color: color,
+        size: 60.0,
+        onDone: () {
+          _splashEntry?.remove();
+          _splashEntry = null;
+        },
       ),
     );
     Overlay.of(context).insert(_splashEntry!);
@@ -424,8 +456,7 @@ class _LevelCardScreenState extends State<LevelCardScreen> {
               ],
             ),
           ),
-          if (_showRoundEnd)
-            _buildRoundEndOverlay(),
+          if (_showRoundEnd) _buildRoundEndOverlay(),
         ],
       ),
     );
@@ -440,13 +471,15 @@ class _LevelCardScreenState extends State<LevelCardScreen> {
         final tierCell = widget.row[i];
         final isCurrent = i == _currentTier;
         return GestureDetector(
-          onTap: _roundActive ? null : () {
-            setState(() {
-              _currentTier = i;
-              _inARow = i + 1;
-              _buildTokenKeys();
-            });
-          },
+          onTap: _roundActive
+              ? null
+              : () {
+                  setState(() {
+                    _currentTier = i;
+                    _inARow = i + 1;
+                    _buildTokenKeys();
+                  });
+                },
           child: Container(
             margin: const EdgeInsets.symmetric(horizontal: 6),
             width: isCurrent ? 12 : 10,
@@ -471,7 +504,9 @@ class _LevelCardScreenState extends State<LevelCardScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: SizedBox(
         height: 24,
-        child: _roundActive && _session != null && _session!.levelSpecs.levelType != LevelType.warmUp
+        child: _roundActive &&
+                _session != null &&
+                _session!.levelSpecs.levelType != LevelType.warmUp
             ? Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -479,19 +514,25 @@ class _LevelCardScreenState extends State<LevelCardScreen> {
                   const SizedBox(width: 4),
                   Text(
                     '${_session!.questionsAnswered}/${_session!.levelSpecs.questionsPerRound}',
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white70),
+                    style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white70),
                   ),
                   const SizedBox(width: 20),
-                  const Icon(Icons.star_outline, color: Colors.white70, size: 18),
+                  const Icon(Icons.star_outline,
+                      color: Colors.white70, size: 18),
                   const SizedBox(width: 4),
                   Text(
                     '${_session!.totalPoints}',
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
-                      color: _session!.roundMastered ? Colors.amber
-                          : _session!.roundCleared ? ToneTokenColors.faColor
-                          : Colors.white70,
+                      color: _session!.roundMastered
+                          ? Colors.amber
+                          : _session!.roundCleared
+                              ? ToneTokenColors.faColor
+                              : Colors.white70,
                     ),
                   ),
                 ],
@@ -511,7 +552,8 @@ class _LevelCardScreenState extends State<LevelCardScreen> {
           children: [
             Icon(Icons.lock_outline, color: Colors.white24, size: 48),
             SizedBox(height: 12),
-            Text('Coming soon', style: TextStyle(color: Colors.white24, fontSize: 16)),
+            Text('Coming soon',
+                style: TextStyle(color: Colors.white24, fontSize: 16)),
           ],
         ),
       );
@@ -525,7 +567,8 @@ class _LevelCardScreenState extends State<LevelCardScreen> {
         // Reserve space for sequence tokens, phase bar, tier dots outside the hex.
         const sequenceHeight = 36.0; // sequence tokens + gap
         const belowHexHeight = 110.0; // phase bar + tier dots
-        final maxHexHeight = constraints.maxHeight - sequenceHeight - belowHexHeight;
+        final maxHexHeight =
+            constraints.maxHeight - sequenceHeight - belowHexHeight;
         // Flat-top hex: height = width * sqrt(3)/2
         final hexWidth = min(maxWidth, maxHexHeight / 0.866);
         final hexHeight = hexWidth * 0.866;
@@ -671,7 +714,8 @@ class _LevelCardScreenState extends State<LevelCardScreen> {
       children: List.generate(count, (i) {
         Color fillColor;
         if (answered != null && i < answered.length && answered[i] != null) {
-          fillColor = ToneTokenColors.getColor(answered[i]!.getChromaticOffset(mode));
+          fillColor =
+              ToneTokenColors.getColor(answered[i]!.getChromaticOffset(mode));
         } else {
           fillColor = Colors.white;
         }
@@ -698,8 +742,10 @@ class _LevelCardScreenState extends State<LevelCardScreen> {
     }
 
     final nugget = slot.nugget;
-    final isGlowing = _glowingNugget != null && nugget.samePitchClass(_glowingNugget!);
-    final isWrong = _wrongNugget != null && nugget.samePitchClass(_wrongNugget!);
+    final isGlowing =
+        _glowingNugget != null && nugget.samePitchClass(_glowingNugget!);
+    final isWrong =
+        _wrongNugget != null && nugget.samePitchClass(_wrongNugget!);
     final dimmed = _listeningToSequence;
     final level = _currentCell.representativeLevel;
     final outlineOnly = level != null && !level.answerTokensMakeASound;
@@ -712,7 +758,12 @@ class _LevelCardScreenState extends State<LevelCardScreen> {
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           boxShadow: isWrong
-              ? [BoxShadow(color: Colors.red.withValues(alpha: 0.85), blurRadius: 20, spreadRadius: 6)]
+              ? [
+                  BoxShadow(
+                      color: Colors.red.withValues(alpha: 0.85),
+                      blurRadius: 20,
+                      spreadRadius: 6)
+                ]
               : [],
         ),
         child: ToneToken(
@@ -739,7 +790,12 @@ class _LevelCardScreenState extends State<LevelCardScreen> {
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           boxShadow: _pulsing
-              ? [BoxShadow(color: Colors.white.withValues(alpha: 0.9), blurRadius: 24, spreadRadius: 8)]
+              ? [
+                  BoxShadow(
+                      color: Colors.white.withValues(alpha: 0.9),
+                      blurRadius: 24,
+                      spreadRadius: 8)
+                ]
               : [],
         ),
         child: GestureDetector(
@@ -754,15 +810,21 @@ class _LevelCardScreenState extends State<LevelCardScreen> {
             height: qSize,
             child: CustomPaint(
               painter: _questionTokenShowOutline
-                  ? _HexButtonPainter(fillColor: _questionTokenColor, outlineColor: Colors.white)
+                  ? _HexButtonPainter(
+                      fillColor: _questionTokenColor,
+                      outlineColor: Colors.white)
                   : _HexFillPainter(_questionTokenColor),
-              child: _roundActive && !_hideQuestionPoints && _session != null &&
-                  _session!.levelSpecs.levelType != LevelType.warmUp
+              child: _roundActive &&
+                      !_hideQuestionPoints &&
+                      _session != null &&
+                      _session!.levelSpecs.levelType != LevelType.warmUp
                   ? Center(
                       child: Text(
                         '${_session!.currentQuestionPoints}',
                         style: const TextStyle(
-                          fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black,
                         ),
                       ),
                     )
@@ -839,16 +901,18 @@ class _LevelCardScreenState extends State<LevelCardScreen> {
               ),
               child: Center(
                 child: locked
-                    ? const Icon(Icons.lock_outline, color: Colors.white24, size: 20)
+                    ? const Icon(Icons.lock_outline,
+                        color: Colors.white24, size: 20)
                     : Icon(Icons.play_arrow, color: iconColor, size: 24),
               ),
             ),
           ),
           const SizedBox(height: 3),
-          Text(label, style: TextStyle(
-            fontSize: 9,
-            color: locked ? Colors.white24 : Colors.white54,
-          )),
+          Text(label,
+              style: TextStyle(
+                fontSize: 9,
+                color: locked ? Colors.white24 : Colors.white54,
+              )),
         ],
       ),
     );
@@ -859,8 +923,16 @@ class _LevelCardScreenState extends State<LevelCardScreen> {
     final mastered = _session!.roundMastered;
     final cleared = _session!.roundCleared;
 
-    final headline = mastered ? 'MASTERED!' : cleared ? 'CLEARED' : 'ROUND OVER';
-    final color = mastered ? Colors.amber : cleared ? ToneTokenColors.faColor : Colors.white70;
+    final headline = mastered
+        ? 'MASTERED!'
+        : cleared
+            ? 'CLEARED'
+            : 'ROUND OVER';
+    final color = mastered
+        ? Colors.amber
+        : cleared
+            ? ToneTokenColors.faColor
+            : Colors.white70;
 
     // TODO: stub celebration animation here
     return Container(
@@ -869,9 +941,13 @@ class _LevelCardScreenState extends State<LevelCardScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(headline, style: TextStyle(
-              fontSize: 40, fontWeight: FontWeight.bold, color: color, letterSpacing: 2,
-            )),
+            Text(headline,
+                style: TextStyle(
+                  fontSize: 40,
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                  letterSpacing: 2,
+                )),
             const SizedBox(height: 24),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -912,7 +988,11 @@ Path _flatTopHexContainerPath(Size size, {double inset = 0.98}) {
     final angle = (60.0 * i) * pi / 180.0;
     final x = cx + r * cos(angle);
     final y = cy + r * sin(angle);
-    if (i == 0) { path.moveTo(x, y); } else { path.lineTo(x, y); }
+    if (i == 0) {
+      path.moveTo(x, y);
+    } else {
+      path.lineTo(x, y);
+    }
   }
   path.close();
   return path;
@@ -990,20 +1070,22 @@ class _SwipeDetectorState extends State<_SwipeDetector> {
   Widget build(BuildContext context) {
     return Listener(
       onPointerDown: widget.enabled ? (e) => _startPos = e.position : null,
-      onPointerUp: widget.enabled ? (e) {
-        if (_startPos == null) return;
-        final dx = e.position.dx - _startPos!.dx;
-        final dy = (e.position.dy - _startPos!.dy).abs();
-        _startPos = null;
-        // Only trigger if horizontal movement is dominant and > 50px.
-        if (dx.abs() > 50 && dx.abs() > dy * 1.5) {
-          if (dx < 0) {
-            widget.onSwipeLeft();
-          } else {
-            widget.onSwipeRight();
-          }
-        }
-      } : null,
+      onPointerUp: widget.enabled
+          ? (e) {
+              if (_startPos == null) return;
+              final dx = e.position.dx - _startPos!.dx;
+              final dy = (e.position.dy - _startPos!.dy).abs();
+              _startPos = null;
+              // Only trigger if horizontal movement is dominant and > 50px.
+              if (dx.abs() > 50 && dx.abs() > dy * 1.5) {
+                if (dx < 0) {
+                  widget.onSwipeLeft();
+                } else {
+                  widget.onSwipeRight();
+                }
+              }
+            }
+          : null,
       child: widget.child,
     );
   }
@@ -1013,11 +1095,14 @@ class _HexContainerPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final path = _flatTopHexContainerPath(size);
-    canvas.drawPath(path, Paint()..color = Colors.white.withValues(alpha: 0.05));
-    canvas.drawPath(path, Paint()
-      ..color = Colors.white.withValues(alpha: 0.15)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5);
+    canvas.drawPath(
+        path, Paint()..color = Colors.white.withValues(alpha: 0.05));
+    canvas.drawPath(
+        path,
+        Paint()
+          ..color = Colors.white.withValues(alpha: 0.15)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5);
   }
 
   @override
@@ -1038,7 +1123,11 @@ class _HexFillPainter extends CustomPainter {
       final angle = (60.0 * i) * pi / 180.0;
       final x = cx + r * cos(angle);
       final y = cy + r * sin(angle);
-      if (i == 0) { path.moveTo(x, y); } else { path.lineTo(x, y); }
+      if (i == 0) {
+        path.moveTo(x, y);
+      } else {
+        path.lineTo(x, y);
+      }
     }
     path.close();
     canvas.drawPath(path, Paint()..color = color);
@@ -1059,13 +1148,19 @@ class _HexOutlinePainter extends CustomPainter {
       final angle = (60.0 * i) * pi / 180.0;
       final x = cx + r * cos(angle);
       final y = cy + r * sin(angle);
-      if (i == 0) { path.moveTo(x, y); } else { path.lineTo(x, y); }
+      if (i == 0) {
+        path.moveTo(x, y);
+      } else {
+        path.lineTo(x, y);
+      }
     }
     path.close();
-    canvas.drawPath(path, Paint()
-      ..color = Colors.white.withValues(alpha: 0.35)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5);
+    canvas.drawPath(
+        path,
+        Paint()
+          ..color = Colors.white.withValues(alpha: 0.35)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5);
   }
 
   @override
@@ -1087,14 +1182,20 @@ class _HexButtonPainter extends CustomPainter {
       final angle = (60.0 * i) * pi / 180.0;
       final x = cx + r * cos(angle);
       final y = cy + r * sin(angle);
-      if (i == 0) { path.moveTo(x, y); } else { path.lineTo(x, y); }
+      if (i == 0) {
+        path.moveTo(x, y);
+      } else {
+        path.lineTo(x, y);
+      }
     }
     path.close();
     canvas.drawPath(path, Paint()..color = fillColor);
-    canvas.drawPath(path, Paint()
-      ..color = outlineColor
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 3.0);
+    canvas.drawPath(
+        path,
+        Paint()
+          ..color = outlineColor
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 3.0);
   }
 
   @override
@@ -1113,8 +1214,12 @@ class _HexFlyEffect extends StatefulWidget {
   final VoidCallback onDone;
 
   const _HexFlyEffect({
-    required this.from, required this.to, required this.color,
-    required this.size, this.label, required this.onDone,
+    required this.from,
+    required this.to,
+    required this.color,
+    required this.size,
+    this.label,
+    required this.onDone,
   });
 
   @override
@@ -1131,7 +1236,8 @@ class _HexFlyEffectState extends State<_HexFlyEffect>
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 500));
+    _controller = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 500));
     _opacity = TweenSequence([
       TweenSequenceItem(tween: Tween(begin: 0.8, end: 1.0), weight: 30),
       TweenSequenceItem(tween: ConstantTween(1.0), weight: 40),
@@ -1145,7 +1251,10 @@ class _HexFlyEffectState extends State<_HexFlyEffect>
   }
 
   @override
-  void dispose() { _controller.dispose(); super.dispose(); }
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1156,16 +1265,26 @@ class _HexFlyEffectState extends State<_HexFlyEffect>
         return Positioned(
           left: _position.value.dx - s / 2,
           top: _position.value.dy - s / 2,
-          width: s, height: s,
+          width: s,
+          height: s,
           child: IgnorePointer(
             child: Opacity(
               opacity: _opacity.value,
               child: CustomPaint(
                 painter: _HexFillPainter(widget.color),
                 child: widget.label != null
-                    ? Center(child: Text(widget.label!,
-                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold,
-                          color: Colors.white, shadows: [Shadow(offset: Offset(1, 1), blurRadius: 3, color: Colors.black45)])))
+                    ? Center(
+                        child: Text(widget.label!,
+                            style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                                shadows: [
+                                  Shadow(
+                                      offset: Offset(1, 1),
+                                      blurRadius: 3,
+                                      color: Colors.black45)
+                                ])))
                     : null,
               ),
             ),

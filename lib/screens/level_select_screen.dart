@@ -43,7 +43,8 @@ class _LevelCard extends StatelessWidget {
   final List<LevelSpecs> allLevels;
   final int index;
 
-  const _LevelCard({required this.level, required this.allLevels, required this.index});
+  const _LevelCard(
+      {required this.level, required this.allLevels, required this.index});
 
   @override
   Widget build(BuildContext context) {
@@ -70,7 +71,10 @@ class _LevelCard extends StatelessWidget {
             Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (context) => PracticeScreen(levelSpecs: level, allLevels: allLevels, currentLevelIndex: index),
+                builder: (context) => PracticeScreen(
+                    levelSpecs: level,
+                    allLevels: allLevels,
+                    currentLevelIndex: index),
               ),
             );
           },
@@ -83,7 +87,7 @@ class _LevelCard extends StatelessWidget {
                   width: 32,
                   child: Text(
                     '${index + 1}',
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
                       color: Colors.white38,

@@ -1,5 +1,4 @@
 import 'level_specs.dart';
-import 'round_result.dart';
 
 /// A single cell in the hex grid map, aggregating the warm-up/practice/challenge
 /// triplet for one note-combination × notes-in-a-row intersection.
@@ -7,7 +6,7 @@ class HexGridCell {
   final int row;
   final int column;
   final String displayLabel; // e.g. "do-re"
-  final int levelNumber;     // 1-based, by note combination
+  final int levelNumber; // 1-based, by note combination
 
   final LevelSpecs? warmUpLevel;
   final LevelSpecs? practiceLevel;
