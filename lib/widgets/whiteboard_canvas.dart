@@ -7,7 +7,7 @@ import 'solfege_hex_token.dart';
 
 enum CanvasLayout {
   horizontal, // 1920×1080: time → x, pitch → y (higher = up)
-  vertical,   // 1080×1920: time → y, pitch → x (higher = right)
+  vertical, // 1080×1920: time → y, pitch → x (higher = right)
 }
 
 enum CanvasJustify { left, center, right }
@@ -66,6 +66,12 @@ class WhiteboardCanvas extends StatefulWidget {
   /// layout pixel dimensions. Used for the live on-screen preview.
   final Size? fitToSize;
 
+  /// User zoom for the on-screen preview only (exports are unaffected).
+  /// Implemented by pretending the pitch axis is [zoom]x taller than the
+  /// viewport: the auto-fit maths then yields a proportionally larger token
+  /// and spreads the notes over that taller canvas, which the parent scrolls.
+  final double zoom;
+
   /// Optional callbacks — when provided, tokens become interactive:
   /// tap to play (and release on lift) and drag-to-play across tokens
   /// (release on rolling off, attack on rolling onto a new tile).
@@ -76,6 +82,11 @@ class WhiteboardCanvas extends StatefulWidget {
   /// (-1 / null = nothing playing). The matching token renders with the
   /// GLOW state so viewers see the playhead advance.
   final int? playingIndex;
+
+  /// Multi-voice arrow-play: when >= 0, every note in this beat/column glows
+  /// (a whole-column chord is sounding). Takes precedence over [playingIndex]
+  /// for the glow, so tap = single token, arrow-step = whole column.
+  final int playingColumn;
 
   /// Dark = black bg, white text. Light = white bg, black text. Tokens
   /// invert their dark/glow fill accordingly.
@@ -102,11 +113,13 @@ class WhiteboardCanvas extends StatefulWidget {
     required this.layout,
     this.tokenSize = 80.0,
     this.fitToSize,
+    this.zoom = 1.0,
     this.title,
     this.justify = CanvasJustify.left,
     this.onNoteDown,
     this.onNoteUp,
     this.playingIndex,
+    this.playingColumn = -1,
     this.theme = SolfegeHexTheme.dark,
     this.shape = SolfegeTokenShape.hex,
     this.respectLineBreaks = false,
@@ -144,8 +157,7 @@ class WhiteboardCanvasState extends State<WhiteboardCanvas> {
   List<Offset> _lastPositions = const [];
   double _lastTokenSize = 0;
 
-  bool get _interactive =>
-      widget.onNoteDown != null || widget.onNoteUp != null;
+  bool get _interactive => widget.onNoteDown != null || widget.onNoteUp != null;
 
   /// For each note in [widget.notes], returns its row index. Notes that are
   /// line-break markers themselves get row -1. In single-row mode (the
@@ -251,9 +263,8 @@ class WhiteboardCanvasState extends State<WhiteboardCanvas> {
 
   @override
   Widget build(BuildContext context) {
-    final viewport = widget.fitToSize ??
-        widget.sizeOverride ??
-        widget.layout.exportSize;
+    final viewport =
+        widget.fitToSize ?? widget.sizeOverride ?? widget.layout.exportSize;
     final isPreview = widget.fitToSize != null;
     final titleFontSize = isPreview ? 20.0 : 48.0;
     final titleAreaHeight = isPreview ? 30.0 : widget.layout.titleHeight;
@@ -266,9 +277,16 @@ class WhiteboardCanvasState extends State<WhiteboardCanvas> {
     // the parent SingleChildScrollView handles horizontal panning. Take the
     // larger of (viewport width, natural content width) so when content fits,
     // justify and centering still work; when it overflows, we grow naturally.
+    // Zoom stretches the pitch axis we lay out against; the token size that
+    // fits that taller axis grows with it. Only the preview zooms.
+    final Size layoutViewport = isPreview
+        ? Size(viewport.width, viewport.height * widget.zoom)
+        : viewport;
+
     final Size size;
     if (isPreview) {
-      final ts = _effectiveTokenSize(viewport, hasTitle ? titleAreaHeight : 0);
+      final ts =
+          _effectiveTokenSize(layoutViewport, hasTitle ? titleAreaHeight : 0);
       final lyricStyle = GoogleFonts.sourceSans3(
         fontSize: ts * 0.45,
         fontWeight: FontWeight.w500,
@@ -276,7 +294,7 @@ class WhiteboardCanvasState extends State<WhiteboardCanvas> {
         height: 1.0,
       );
       final natural = _naturalContentWidth(ts, lyricStyle, true);
-      size = Size(math.max(viewport.width, natural), viewport.height);
+      size = Size(math.max(viewport.width, natural), layoutViewport.height);
     } else {
       size = viewport;
     }
@@ -321,7 +339,8 @@ class WhiteboardCanvasState extends State<WhiteboardCanvas> {
 
   /// Build tokens and lyrics, layered correctly.
   /// Caches positions and token size for pointer hit-testing.
-  List<Widget> _buildContent(Size canvas, double titleOffset, bool isLightTheme) {
+  List<Widget> _buildContent(
+      Size canvas, double titleOffset, bool isLightTheme) {
     if (widget.notes.isEmpty) {
       _lastPositions = const [];
       _lastTokenSize = 0;
@@ -437,18 +456,21 @@ class WhiteboardCanvasState extends State<WhiteboardCanvas> {
       if (n.isSpacer || n.isLineBreak) continue;
       final p = positions[i];
       final isActive = _interactive && i == _activeIndex;
+      // All voices render at the same token size.
+      final double nts = ts;
 
       // Pitched notes get a hex token; lyric-only notes render just their
       // lyric text at the same anchor.
       if (!n.isLyricOnly) {
-        // Glow when this is the arrow-play playhead, OR while a finger is
-        // touching/dragging this token. Both surfaces share a single state.
-        final isGlowing = widget.playingIndex == i ||
-            (_interactive && i == _activeIndex);
+        // Glow when this token is the playhead (single, on tap) or in the
+        // currently-sounding column (arrow-play chord), OR while a finger is
+        // touching/dragging it.
+        final isGlowing =
+            _noteIsPlaying(n, i) || (_interactive && i == _activeIndex);
         Widget tokenContent = SolfegeHexToken(
           label: n.syllable,
           chromaticOffset: n.chromaticOffset,
-          size: ts,
+          size: nts,
           state: isGlowing ? SolfegeHexState.glow : SolfegeHexState.dark,
           theme: widget.theme,
           shape: widget.shape,
@@ -456,15 +478,14 @@ class WhiteboardCanvasState extends State<WhiteboardCanvas> {
         // In vertical mode, rotate the tile 90° clockwise so the hex shape
         // and label rotate together with the layout.
         if (isVertical) {
-          tokenContent =
-              RotatedBox(quarterTurns: 1, child: tokenContent);
+          tokenContent = RotatedBox(quarterTurns: 1, child: tokenContent);
         }
 
         tokens.add(Positioned(
-          left: p.dx - ts / 2,
-          top: p.dy - ts / 2,
-          width: ts,
-          height: ts,
+          left: p.dx - nts / 2,
+          top: p.dy - nts / 2,
+          width: nts,
+          height: nts,
           child: IgnorePointer(
             // Tokens should not consume pointer events when interactive —
             // the canvas-level Listener handles everything.
@@ -487,8 +508,7 @@ class WhiteboardCanvasState extends State<WhiteboardCanvas> {
         // that has no solfège still feels like an acknowledged interaction
         // (no tone — that's intentional silence).
         final isLyricActive = n.isLyricOnly &&
-            (widget.playingIndex == i ||
-                (_interactive && i == _activeIndex));
+            (_noteIsPlaying(n, i) || (_interactive && i == _activeIndex));
         Widget lyricWidget = Text(
           lyric,
           style: isLyricActive
@@ -503,12 +523,10 @@ class WhiteboardCanvasState extends State<WhiteboardCanvas> {
           // Rotate lyric 90° clockwise to match rotated tiles. Position it
           // to the right of the tile (or centered on p for lyric-only).
           lyrics.add(Positioned(
-            left: n.isLyricOnly ? p.dx : p.dx + ts / 2 + 2,
-            top: p.dy - ts / 2,
+            left: n.isLyricOnly ? p.dx : p.dx + nts / 2 + 2,
+            top: p.dy - nts / 2,
             child: FractionalTranslation(
-              translation: n.isLyricOnly
-                  ? const Offset(-0.5, 0)
-                  : Offset.zero,
+              translation: n.isLyricOnly ? const Offset(-0.5, 0) : Offset.zero,
               child: IgnorePointer(
                 child: RotatedBox(quarterTurns: 1, child: lyricWidget),
               ),
@@ -519,7 +537,7 @@ class WhiteboardCanvasState extends State<WhiteboardCanvas> {
           // anchor point in both axes.
           lyrics.add(Positioned(
             left: p.dx,
-            top: n.isLyricOnly ? p.dy : p.dy + ts / 2 + 2,
+            top: n.isLyricOnly ? p.dy : p.dy + nts / 2 + 2,
             child: FractionalTranslation(
               translation: Offset(-0.5, n.isLyricOnly ? -0.5 : 0),
               child: IgnorePointer(child: lyricWidget),
@@ -583,8 +601,8 @@ class WhiteboardCanvasState extends State<WhiteboardCanvas> {
     // would otherwise clip past canvas.height — reserve a fraction of a
     // token below the lowest tile so the lyric line stays inside.
     final bool reserveLyricBelow = widget.layout == CanvasLayout.horizontal &&
-        widget.notes.any((n) =>
-            !n.isLineBreak && n.lyric != null && n.lyric!.isNotEmpty);
+        widget.notes.any(
+            (n) => !n.isLineBreak && n.lyric != null && n.lyric!.isNotEmpty);
     const double lyricReserveFactor = 0.7;
     // Multi-row horizontal exports reserve a system band between rows.
     // bandHeight = ts × _systemBandFactor; the joint pitch-axis constraint is:
@@ -709,6 +727,13 @@ class WhiteboardCanvasState extends State<WhiteboardCanvas> {
     return tp.width;
   }
 
+  /// Whether note [n] (at index [i]) should render as "playing". Arrow-play
+  /// glows the whole sounding column; tap/single-note glows just that index.
+  bool _noteIsPlaying(SolfegeNote n, int i) {
+    if (widget.playingColumn >= 0) return n.column == widget.playingColumn;
+    return widget.playingIndex == i;
+  }
+
   List<Offset> _computePositions(
     Size canvas,
     double ts,
@@ -782,8 +807,18 @@ class WhiteboardCanvasState extends State<WhiteboardCanvas> {
       final r = rowOfIndex[i];
       if (r < 0) continue;
       final prevIdx = rowLastRenderable[r];
+      final curCol = widget.notes[i].column;
+      // Multi-voice: a note sharing the previous note's beat/column is a
+      // stacked voice — it sits at the SAME time position (x), only its pitch
+      // (y) differs. Only advance the time axis when the column changes (or
+      // when column info is absent, i.e. legacy single-voice = one per step).
+      final sameColumnAsPrev = prevIdx != null &&
+          curCol >= 0 &&
+          widget.notes[prevIdx].column == curCol;
       if (prevIdx == null) {
         timeOffsetForIndex[i] = 0.0;
+      } else if (sameColumnAsPrev) {
+        timeOffsetForIndex[i] = timeOffsetForIndex[prevIdx];
       } else {
         final prev = widget.notes[prevIdx];
         final step = _horizontalStep(prev, widget.notes[i], ts, lyricStyle);
@@ -816,9 +851,7 @@ class WhiteboardCanvasState extends State<WhiteboardCanvas> {
     final perRowPitchAxisStart = List<double>.generate(rowCount, (r) {
       // r=0 is the top row, r=rowCount-1 is the bottom row.
       final padInRow = (rowHeight - pitchSpan) / 2;
-      return margin +
-          (rowCount - 1 - r) * (rowHeight + bandHeight) +
-          padInRow;
+      return margin + (rowCount - 1 - r) * (rowHeight + bandHeight) + padInRow;
     });
 
     // Lyric-only words have no pitch. Rather than interpolate a height from

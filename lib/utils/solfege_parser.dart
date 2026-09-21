@@ -51,6 +51,16 @@ class SolfegeNote {
   /// cursor to the note it's editing so the canvas can follow along.
   final int sourceStart;
 
+  /// Multi-voice replay: which voice this note belongs to (0 = soprano/top,
+  /// 1+ = harmony voices stacked at the same beat). Single-voice text parsing
+  /// leaves this 0.
+  final int voice;
+
+  /// The beat/column index this note occupies. Notes sharing a [column] are
+  /// time-aligned (stacked vertically) on the canvas. -1 for the legacy
+  /// single-voice path, where each note is its own time step.
+  final int column;
+
   const SolfegeNote({
     required this.syllable,
     required this.chromaticOffset,
@@ -61,6 +71,8 @@ class SolfegeNote {
     this.isLineBreak = false,
     this.groupId,
     this.sourceStart = -1,
+    this.voice = 0,
+    this.column = -1,
   });
 
   /// Total chromatic position from base do (octave 0, offset 0).
@@ -115,6 +127,27 @@ class SolfegeParser {
       t = t.substring(0, t.length - 1);
     }
     return _syllableMap.containsKey(t);
+  }
+
+  /// Parse a single solfège token (with optional trailing `'`/`,` octave
+  /// markers) into its base syllable, chromatic offset and octave. Returns null
+  /// if the syllable is not recognised. Used by the table model to render a
+  /// cell's solfège without going through the whitespace tokenizer.
+  static ({String syllable, int offset, int octave})? parseSolfegeToken(
+      String token) {
+    var t = token.toLowerCase().trim();
+    var octave = 0;
+    while (t.endsWith("'")) {
+      octave += 1;
+      t = t.substring(0, t.length - 1);
+    }
+    while (t.endsWith(',')) {
+      octave -= 1;
+      t = t.substring(0, t.length - 1);
+    }
+    final offset = _syllableMap[t];
+    if (offset == null) return null;
+    return (syllable: t, offset: offset, octave: octave);
   }
 
   static SolfegeParseResult parse(String input) {

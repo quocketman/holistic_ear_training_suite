@@ -15,10 +15,23 @@ import 'url_state_native.dart'
 /// dropped straight into the input field.
 String? readSolfegeTextFromUrl() => platform.readSolfegeTextFromUrl();
 
-/// Builds the share / reopen URL that, when visited, will pre-populate the
-/// Whiteboard's input with [solfegeText]. Always returns the public
-/// production URL — same string works whether called from web or native.
+/// Returns the Markdown-table score encoded in the current page URL's hash
+/// (`#table=<urlencoded markdown>`), or null if absent. This is the newer,
+/// multi-voice save format; [readSolfegeTextFromUrl] remains for legacy
+/// single-voice `#text=` links.
+String? readTableMarkdownFromUrl() => platform.readTableMarkdownFromUrl();
+
+/// Builds the legacy single-voice share URL (`#text=`). Kept so old PDFs keep
+/// working; new links use [buildTableShareUrl].
 String buildSolfegeShareUrl(String solfegeText) {
   final encoded = Uri.encodeComponent(solfegeText);
   return 'https://whiteboard.tuneindigo.com/#text=$encoded';
+}
+
+/// Builds the share / reopen URL carrying the full multi-voice table as a
+/// Markdown table (`#table=<urlencoded markdown>`). The hash fragment stays
+/// client-side and has generous length limits.
+String buildTableShareUrl(String markdown) {
+  final encoded = Uri.encodeComponent(markdown);
+  return 'https://whiteboard.tuneindigo.com/#table=$encoded';
 }

@@ -13,12 +13,17 @@ import '../models/musical_state.dart';
 import '../models/synth_parameters.dart';
 import '../models/tone_token_colors.dart';
 import '../services/audio_service.dart';
-import '../services/pdf_export.dart' show
-    exportRepaintBoundaryToPng, exportPrintPagesToPdf, captureBoundaryToPngBytes;
+import '../services/pdf_export.dart'
+    show
+        exportRepaintBoundaryToPng,
+        exportPrintPagesToPdf,
+        captureBoundaryToPngBytes;
 import '../services/signup_service.dart';
 import '../services/url_state.dart';
 import '../services/whiteboard_print_layout.dart';
 import '../utils/solfege_parser.dart';
+import '../utils/score_table.dart';
+import '../widgets/score_table_editor.dart';
 import '../widgets/solfege_highlight_controller.dart';
 import 'sound_design_screen.dart';
 import '../widgets/find_the_key_modal.dart';
@@ -34,8 +39,9 @@ class WhiteboardScreen extends StatefulWidget {
 }
 
 class _WhiteboardScreenState extends State<WhiteboardScreen> {
-  // Persistent state across page navigation.
-  static String _persistedSolfege = '';
+  // Persistent state across page navigation. The score is kept as a Markdown
+  // table (the durable multi-voice save format).
+  static String _persistedMarkdown = '';
   static String _persistedTitle = '';
   static CanvasJustify _persistedJustify = CanvasJustify.left;
   static SolfegeHexTheme _persistedTheme = SolfegeHexTheme.dark;
@@ -57,18 +63,30 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
   // it scrolled so the note under the text cursor stays in view — whether the
   // user is appending at the end or editing back in the middle.
   final _canvasScrollController = ScrollController();
-  // Last observed solfège text + cursor, so the controller listener can tell
-  // a text edit apart from a pure cursor move and react to each.
-  String _lastSolfegeText = '';
-  TextSelection _lastSolfegeSelection =
-      const TextSelection.collapsed(offset: -1);
+
+  /// User zoom for the on-screen board. 1.0 = "fit the viewport"; larger
+  /// values grow the tokens and let the board scroll. Preview only — exports
+  /// and the print PDF always render at their own fitted size.
+  double _zoom = 1.0;
+  static const double _zoomMin = 0.6;
+  static const double _zoomMax = 4.0;
+  static const double _zoomStep = 0.25;
+
+  void _setZoom(double z) {
+    final clamped = z.clamp(_zoomMin, _zoomMax).toDouble();
+    if (clamped != _zoom) setState(() => _zoom = clamped);
+  }
+
   // Toggled by the AppBar ? icon. The help panel slides in below the input
   // area as an overlay on the canvas, so users can read the directions while
   // typing.
   bool _isHelpVisible = false;
-  // Arrow-key play state. Arrow keys step through pitched notes; each step
-  // fires a note that auto-releases after _kPlayHoldMs. -1 = no playhead.
+  // Arrow-key play state. Arrow keys step through BEATS/columns; each step
+  // sounds every voice in the column at once (a chord). -1 = no playhead.
+  // _playIndex is a representative note index (for scroll + single-tap glow);
+  // _playColumn (>= 0 during arrow-play) glows/sounds the whole column.
   int _playIndex = -1;
+  int _playColumn = -1;
   // True while the body Focus has play focus (i.e. user pressed PLAY or
   // released a tap). Used to show on-screen arrow buttons on narrow
   // viewports where a hardware keyboard isn't available.
@@ -87,6 +105,12 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
     notes: [],
     unrecognized: [],
   );
+  // The current score — source of truth for rendering, export and the link.
+  // The editor takes this as its starting content and owns a working copy;
+  // bumping [_editorEpoch] (its key) forces it to rebuild from a fresh table
+  // (e.g. after Clear).
+  late ScoreTable _scoreTable;
+  int _editorEpoch = 0;
   CanvasJustify _justify = CanvasJustify.left;
   SolfegeHexTheme _theme = SolfegeHexTheme.dark;
   SolfegeTokenShape _shape = SolfegeTokenShape.hex;
@@ -110,22 +134,29 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
   @override
   void initState() {
     super.initState();
-    // If the page URL carries an encoded solfège payload (set by a PDF's
-    // "Edit in Whiteboard" link or a share URL), it overrides the
-    // in-memory persisted text. URL > previous session.
-    final fromUrl = readSolfegeTextFromUrl();
-    final initialText =
-        (fromUrl != null && fromUrl.isNotEmpty) ? fromUrl : _persistedSolfege;
-    _controller = SolfegeHighlightController(text: initialText);
-    _lastSolfegeText = initialText;
-    _controller.addListener(_onSolfegeControllerChanged);
+    // Load the score. Priority: a new `#table=` Markdown link > a legacy
+    // `#text=` single-voice link > the in-memory persisted session.
+    final tableMd = readTableMarkdownFromUrl();
+    final legacyText = readSolfegeTextFromUrl();
+    ScoreTable table;
+    if (tableMd != null && tableMd.trim().isNotEmpty) {
+      table = ScoreTable.fromMarkdown(tableMd);
+    } else if (legacyText != null && legacyText.isNotEmpty) {
+      table = ScoreTable.fromSolfegeText(legacyText);
+    } else if (_persistedMarkdown.isNotEmpty) {
+      table = ScoreTable.fromMarkdown(_persistedMarkdown);
+    } else {
+      table = ScoreTable.empty();
+    }
+    _scoreTable = table;
+    _parsed = table.toParseResult();
+    // `_controller` is retained only as the voice-0 text holder for the legacy
+    // export footer/link; it no longer drives rendering, so no listener.
+    _controller = SolfegeHighlightController(text: table.toSolfegeText());
     _titleController = TextEditingController(text: _persistedTitle);
     _justify = _persistedJustify;
     _theme = _persistedTheme;
     _shape = _persistedShape;
-    if (initialText.isNotEmpty) {
-      _parsed = SolfegeParser.parse(initialText);
-    }
     // Watch play-focus directly. The Focus widget's onFocusChange callback
     // tracks hasFocus, which stays true while a descendant (a TextField)
     // owns focus — so it doesn't fire when the user taps into the input.
@@ -148,7 +179,7 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
   @override
   void dispose() {
     // Save state for next visit before tearing down controllers.
-    _persistedSolfege = _controller.text;
+    _persistedMarkdown = _scoreTable.toMarkdown();
     _persistedTitle = _titleController.text;
     _persistedJustify = _justify;
     _persistedTheme = _theme;
@@ -158,7 +189,6 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
     }
     _activeNotes.clear();
     _audioService.dispose();
-    _controller.removeListener(_onSolfegeControllerChanged);
     _controller.dispose();
     _titleController.dispose();
     _canvasScrollController.dispose();
@@ -206,101 +236,30 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
       }
       return;
     }
-    // Pitched tap: engage arrow-play from this point — focus the body so
-    // the next ← / → routes to _onPlayKey, and surface the on-screen
-    // arrow buttons for touch users.
+    // Pitched tap: only THIS token sounded (via _onNoteDown). Engage play
+    // mode from this beat — single-token glow (_playColumn = -1), focus the
+    // body so the next ← / → routes to _onPlayKey (and steps by column,
+    // sounding the whole chord), and surface the on-screen arrow buttons.
     if (!note.isSpacer) {
       setState(() {
         _playIndex = index;
+        _playColumn = -1;
         _playEngaged = true;
       });
       _playFocusNode.requestFocus();
     }
   }
 
-  /// Single listener on the solfège controller: reparses on text edits and,
-  /// on either an edit or a bare cursor move, keeps the canvas scrolled to the
-  /// note the cursor is sitting in. Replaces the old "jump to the right edge
-  /// on every keystroke" behavior, which lost the user's place whenever they
-  /// went back to edit notes in the middle of a long melody.
-  void _onSolfegeControllerChanged() {
-    if (!mounted) return;
-    final text = _controller.text;
-    final selection = _controller.selection;
-    final textChanged = text != _lastSolfegeText;
-    final selectionChanged = selection != _lastSolfegeSelection;
-    _lastSolfegeText = text;
-    _lastSolfegeSelection = selection;
-
-    if (textChanged) {
-      setState(() {
-        _parsed = SolfegeParser.parse(text);
-      });
-    }
-    if (textChanged || selectionChanged) {
-      // Wait for the canvas to relayout with the new content/size before
-      // reading token positions.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _scrollToCursorNote();
-      });
-    }
-  }
-
-  /// The index of the note whose source token is at or most recently before
-  /// the text cursor, or null when there are no notes. Note `sourceStart`
-  /// values are non-decreasing, so the last token starting at/before the
-  /// cursor is the one being edited.
-  int? _noteIndexForCursor(int cursor) {
-    final notes = _parsed.notes;
-    if (notes.isEmpty) return null;
-    int? best;
-    for (var i = 0; i < notes.length; i++) {
-      final start = notes[i].sourceStart;
-      if (start < 0) continue;
-      if (start <= cursor) {
-        best = i;
-      } else {
-        break;
-      }
-    }
-    // Cursor sits before the first token — follow to the first note.
-    return best ?? 0;
-  }
-
-  /// Scrolls the horizontal canvas viewport so the note under the text cursor
-  /// stays comfortably in view. No-op when the note is already on-screen, and
-  /// when the content fits without scrolling (e.g. vertical/mobile layout).
-  void _scrollToCursorNote() {
-    if (!mounted || !_canvasScrollController.hasClients) return;
-    final position = _canvasScrollController.position;
-    if (position.maxScrollExtent <= 0) return;
-
-    final selection = _controller.selection;
-    if (!selection.isValid || selection.baseOffset < 0) return;
-    final index = _noteIndexForCursor(selection.baseOffset);
-    if (index == null) return;
-    final pos = _previewCanvasKey.currentState?.tokenPosition(index);
-    if (pos == null) return;
-
-    final viewport = position.viewportDimension;
-    final current = _canvasScrollController.offset;
-    final tokenX = pos.dx;
-    const edgePad = 80.0;
-
-    double? target;
-    if (tokenX < current + edgePad) {
-      target = tokenX - viewport * 0.3;
-    } else if (tokenX > current + viewport - edgePad) {
-      target = tokenX - viewport * 0.7;
-    }
-    if (target == null) return;
-
-    final clamped = target.clamp(0.0, position.maxScrollExtent);
-    _canvasScrollController.animateTo(
-      clamped,
-      duration: const Duration(milliseconds: 200),
-      curve: Curves.easeOut,
-    );
+  /// The table editor reports a change. The table is the source of truth: it
+  /// drives rendering (toParseResult), the voice-0 legacy text (for the export
+  /// footer/link) and the persisted Markdown save.
+  void _onTableChanged(ScoreTable table) {
+    setState(() {
+      _scoreTable = table;
+      _parsed = table.toParseResult();
+    });
+    _controller.text = table.toSolfegeText();
+    _persistedMarkdown = table.toMarkdown();
   }
 
   /// True only on iOS / Android. Desktop and web are always horizontal.
@@ -551,9 +510,8 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
                     child: Text(
                       'do = ${p.displayName}',
                       style: TextStyle(
-                        fontWeight: p == current
-                            ? FontWeight.bold
-                            : FontWeight.normal,
+                        fontWeight:
+                            p == current ? FontWeight.bold : FontWeight.normal,
                       ),
                     ),
                   ))
@@ -613,15 +571,6 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
   /// Next index the arrow-play stepper should land on. Stops on pitched
   /// notes AND on lyric-only notes (the latter so the user can pause and
   /// imagine the unsung pitch). Skips spacers and line-break markers.
-  int? _nextPitchedIndex(int from, int delta) {
-    var i = from + delta;
-    while (i >= 0 && i < _parsed.notes.length) {
-      final n = _parsed.notes[i];
-      if (!n.isSpacer && !n.isLineBreak) return i;
-      i += delta;
-    }
-    return null;
-  }
 
   /// Fires whenever the play-focus node's focus state changes — including
   /// when primary focus moves to a TextField inside the body subtree.
@@ -629,9 +578,10 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
   /// on-screen step buttons.
   void _onPlayFocusChanged() {
     if (_playFocusNode.hasPrimaryFocus) return;
-    if (_playIndex < 0 && !_playEngaged) return;
+    if (_playIndex < 0 && _playColumn < 0 && !_playEngaged) return;
     setState(() {
       _playIndex = -1;
+      _playColumn = -1;
       _playEngaged = false;
     });
   }
@@ -693,41 +643,68 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
   /// cross-step handle tracking required.
   static const int _kPlayHoldMs = 500;
 
+  /// The ordered, distinct beat/columns that contain a renderable note
+  /// (pitched or a silent lyric-only pause). Arrow-play steps through these.
+  List<int> _playableColumns() {
+    final seen = <int>{};
+    final cols = <int>[];
+    for (final n in _parsed.notes) {
+      if (n.isSpacer || n.isLineBreak || n.column < 0) continue;
+      if (seen.add(n.column)) cols.add(n.column);
+    }
+    return cols;
+  }
+
+  /// Advance the playhead by one beat/column and sound EVERY voice in that
+  /// column at once (a chord), each on its own synth voice. Tapping still
+  /// sounds a single token; this is the arrow-step behaviour.
   Future<void> _stepPlay(int delta) async {
-    final target = _nextPitchedIndex(_playIndex, delta);
-    if (target == null) {
-      // Stepped past the boundary. Park the playhead *outside* the valid
-      // range so:
-      //   • the glow on the just-vacated token releases (no index matches)
-      //   • the opposite arrow finds the last in-range note via
-      //     _nextPitchedIndex and re-plays it as the first note back.
-      final outOfBounds = delta > 0 ? _parsed.notes.length : -1;
-      if (_playIndex != outOfBounds) {
-        setState(() => _playIndex = outOfBounds);
-      }
+    final cols = _playableColumns();
+    if (cols.isEmpty) return;
+
+    final currentCol = _playColumn >= 0
+        ? _playColumn
+        : (_playIndex >= 0 && _playIndex < _parsed.notes.length
+            ? _parsed.notes[_playIndex].column
+            : -1);
+    final curPos = cols.indexOf(currentCol);
+    final targetPos =
+        curPos < 0 ? (delta > 0 ? 0 : cols.length - 1) : curPos + delta;
+
+    if (targetPos < 0 || targetPos >= cols.length) {
+      // Stepped past the boundary — release the glow; the opposite arrow
+      // re-enters at the last/first column via the currentCol fallback.
+      setState(() {
+        _playColumn = -1;
+        _playIndex = delta > 0 ? _parsed.notes.length : -1;
+      });
       return;
     }
-    setState(() => _playIndex = target);
-    // After the canvas redraws with the new playhead, scroll the
-    // horizontal viewport so the active token stays in view.
+
+    final targetCol = cols[targetPos];
+    final repIndex = _parsed.notes.indexWhere(
+        (n) => n.column == targetCol && !n.isSpacer && !n.isLineBreak);
+    setState(() {
+      _playColumn = targetCol;
+      _playIndex = repIndex;
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _scrollToPlayingToken();
     });
 
-    final note = _parsed.notes[target];
-    // Lyric-only notes are intentional pauses — no audio. The canvas's
-    // playingIndex still points here, scaling the lyric so the user has
-    // a visual cue to imagine the unsung pitch.
-    if (note.isLyricOnly) return;
-
+    // Sound every pitched voice in the column simultaneously.
     final tonic = context.read<MusicalState>().currentTonic;
-    final midi = tonic + note.chromaticOffset + note.octave * 12;
-    if (midi < 0 || midi > 127) return;
-
-    final handle = await _audioService.noteOn(midi, params: _playParams());
-    if (handle == null) return;
-
-    Future.delayed(const Duration(milliseconds: _kPlayHoldMs), handle.release);
+    for (final n in _parsed.notes) {
+      if (n.column != targetCol) continue;
+      if (n.isSpacer || n.isLineBreak || n.isLyricOnly) continue;
+      final midi = tonic + n.chromaticOffset + n.octave * 12;
+      if (midi < 0 || midi > 127) continue;
+      final handle = await _audioService.noteOn(midi, params: _playParams());
+      if (handle != null) {
+        Future.delayed(
+            const Duration(milliseconds: _kPlayHoldMs), handle.release);
+      }
+    }
   }
 
   /// PLAY button — primes the playhead before the first note and grabs
@@ -736,6 +713,7 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
     if (_parsed.notes.isEmpty) return;
     setState(() {
       _playIndex = -1;
+      _playColumn = -1;
       _playEngaged = true;
     });
     _playFocusNode.requestFocus();
@@ -1067,50 +1045,48 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
           ],
         ),
         const SizedBox(height: 16),
-            const _HelpItem(
-              text: 'Type a lyric syllable, forward slash, solfège.',
-              example: 'rain/so',
-            ),
-            const _HelpItem(
-              text: 'Type lyrics alone.',
-              sub:
-                  "Ensure a lyric syllable isn't treated like solfège: follow it with a forward slash.",
-              example: 're/',
-            ),
-            const _HelpItem(
-              text: 'Type solfège alone.',
-              sub:
-                  "Ensure a solfège syllable isn't treated like a lyric: precede it with a forward slash.",
-              example: '/re',
-            ),
-            const _HelpItem(
-              text: 'Higher octave solfège',
-              suffix: 'single quote',
-              example: "do'",
-            ),
-            const _HelpItem(
-              text: 'Lower octave solfège',
-              suffix: 'comma',
-              example: 'do,',
-            ),
-            const _HelpItem(
-              text: 'Add a little space',
-              suffix: 'underscore',
-              example: '_',
-            ),
-            const _HelpItem(
-              text: 'Group tones',
-              sub:
-                  'Place | at the beginning and ending of the group.',
-              example: '| do mi so |',
-            ),
-            const _HelpItem(
-              text: 'Line break (PDF + share)',
-              sub:
-                  'Splits the music into stacked rows when you download or share. '
-                  'The on-screen editor stays one continuous line.',
-              example: 'do re mi [] fa so la',
-            ),
+        const _HelpItem(
+          text: 'Type a lyric syllable, forward slash, solfège.',
+          example: 'rain/so',
+        ),
+        const _HelpItem(
+          text: 'Type lyrics alone.',
+          sub:
+              "Ensure a lyric syllable isn't treated like solfège: follow it with a forward slash.",
+          example: 're/',
+        ),
+        const _HelpItem(
+          text: 'Type solfège alone.',
+          sub:
+              "Ensure a solfège syllable isn't treated like a lyric: precede it with a forward slash.",
+          example: '/re',
+        ),
+        const _HelpItem(
+          text: 'Higher octave solfège',
+          suffix: 'single quote',
+          example: "do'",
+        ),
+        const _HelpItem(
+          text: 'Lower octave solfège',
+          suffix: 'comma',
+          example: 'do,',
+        ),
+        const _HelpItem(
+          text: 'Add a little space',
+          suffix: 'underscore',
+          example: '_',
+        ),
+        const _HelpItem(
+          text: 'Group tones',
+          sub: 'Place | at the beginning and ending of the group.',
+          example: '| do mi so |',
+        ),
+        const _HelpItem(
+          text: 'Line break (PDF + share)',
+          sub: 'Splits the music into stacked rows when you download or share. '
+              'The on-screen editor stays one continuous line.',
+          example: 'do re mi [] fa so la',
+        ),
       ],
     );
   }
@@ -1118,10 +1094,12 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
   void _clear() {
     _controller.clear();
     _titleController.clear();
-    _persistedSolfege = '';
+    _persistedMarkdown = '';
     _persistedTitle = '';
     setState(() {
+      _scoreTable = ScoreTable.empty();
       _parsed = const SolfegeParseResult(notes: [], unrecognized: []);
+      _editorEpoch++; // force the table editor to rebuild from the empty table
     });
   }
 
@@ -1307,196 +1285,257 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
         // TextField lives inside this Focus's subtree.
         onKeyEvent: _onPlayKey,
         child: Stack(
-        clipBehavior: Clip.hardEdge,
-        children: [
-          Column(
-            children: [
-              Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+          clipBehavior: Clip.hardEdge,
+          children: [
+            Column(
               children: [
-                TextField(
-                  controller: _titleController,
-                  decoration: const InputDecoration(
-                    border: OutlineInputBorder(),
-                    labelText: 'Title',
-                    hintText: 'e.g. Mary Had a Little Lamb',
-                  ),
-                  onChanged: (_) => setState(() {}),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _controller,
-                  // Text edits + cursor moves are handled by the controller
-                  // listener (_onSolfegeControllerChanged), which reparses and
-                  // keeps the canvas scrolled to the note being edited.
-                  decoration: const InputDecoration(
-                    border: OutlineInputBorder(),
-                    labelText: 'Lyrics & solfège',
-                    hintText: "e.g. Twink-/do le/do twink-/so le/so lit-/la tle/la star/so",
-                  ),
-                  // Multi-line ergonomics: starts 3 lines tall, grows as the
-                  // user types more lines. Newlines are treated as whitespace
-                  // by the parser — they're for input organisation only.
-                  minLines: 3,
-                  maxLines: null,
-                  keyboardType: TextInputType.multiline,
-                  textInputAction: TextInputAction.newline,
-                ),
-                if (_parsed.unrecognized.isNotEmpty || _statusLine().isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Text(
-                      _statusLine(),
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: _parsed.unrecognized.isNotEmpty
-                            ? Colors.redAccent
-                            : Colors.grey[500],
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          // Live preview — fills available space.
-          Expanded(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                const helpPanelWidth = 360.0;
-                return Stack(
-                  children: [
-                    // Live preview — fills available space.
-                    SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      controller: _canvasScrollController,
-                      child: WhiteboardCanvas(
-                        key: _previewCanvasKey,
-                        notes: _parsed.notes,
-                        layout: layout,
-                        // Maximum diameter — actual size shrinks to fit
-                        // pitch range on narrow viewports. Phones end up at
-                        // the pitch-axis ceiling (~35-40 px), iPads grow
-                        // into the 80-110 range, desktops cap at 120.
-                        tokenSize: 120.0,
-                        fitToSize: Size(
-                          constraints.maxWidth - 24,
-                          constraints.maxHeight - 24,
+                Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      TextField(
+                        controller: _titleController,
+                        decoration: const InputDecoration(
+                          border: OutlineInputBorder(),
+                          labelText: 'Title',
+                          hintText: 'e.g. Mary Had a Little Lamb',
                         ),
-                        title: _titleController.text.trim(),
-                        justify: _justify,
-                        onNoteDown: _onNoteDown,
-                        onNoteUp: _onNoteUp,
-                        playingIndex: _playIndex,
-                        theme: _theme,
-                        shape: _shape,
+                        onChanged: (_) => setState(() {}),
                       ),
-                    ),
-                    // Help panel — slides in from the right edge of the
-                    // canvas, leaving the left side (where solfège
-                    // typically lives, especially before auto-scroll
-                    // kicks in) unobstructed.
-                    AnimatedPositioned(
-                      duration: const Duration(milliseconds: 220),
-                      curve: Curves.easeOutCubic,
-                      right: _isHelpVisible ? 0 : -helpPanelWidth,
-                      top: 0,
-                      bottom: 0,
-                      width: helpPanelWidth,
-                      child: Material(
-                        color: ToneTokenColors.getColor(7), // so blue
-                        elevation: 8,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            border: Border.all(color: Colors.white, width: 2),
+                      const SizedBox(height: 8),
+                      // Table entry surface (replaces the raw lyrics+solfège text
+                      // box). Columns = beats; each voice is a pair of rows
+                      // (lyric/placeholder over solfège). Edits serialize back to the
+                      // legacy text via _onTableChanged so the render/export/link
+                      // pipeline is unchanged.
+                      Container(
+                        decoration: BoxDecoration(
+                          border: Border.all(
+                            color: Theme.of(context).dividerColor,
                           ),
-                          child: _buildHelpPanel(),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: ScoreTableEditor(
+                          key: ValueKey(_editorEpoch),
+                          initialTable: _scoreTable,
+                          theme: _theme,
+                          onChanged: _onTableChanged,
                         ),
                       ),
-                    ),
-                    // On-screen step buttons during arrow-play. Always shown
-                    // when arrow-play is engaged — phones and tablets need
-                    // them (no keyboard); desktop users get an extra,
-                    // unobtrusive way to step beyond the ← / → keys.
-                    if (_playEngaged) ...[
-                      Positioned(
-                        left: 12,
-                        top: 0,
-                        bottom: 0,
-                        child: Center(
-                          child: _PlayStepButton(
-                            icon: Icons.arrow_back,
-                            onPressed: () => _stepPlay(-1),
-                          ),
-                        ),
-                      ),
-                      Positioned(
-                        right: 12,
-                        top: 0,
-                        bottom: 0,
-                        child: Center(
-                          child: _PlayStepButton(
-                            icon: Icons.arrow_forward,
-                            onPressed: () => _stepPlay(1),
-                          ),
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                _statusLine(),
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: _parsed.unrecognized.isNotEmpty
+                                      ? Colors.redAccent
+                                      : Colors.grey[500],
+                                ),
+                              ),
+                            ),
+                            _zoomControl(),
+                          ],
                         ),
                       ),
                     ],
-                  ],
-                );
-              },
+                  ),
+                ),
+                // Live preview — fills available space.
+                Expanded(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      const helpPanelWidth = 360.0;
+                      return Stack(
+                        children: [
+                          // Live preview — fills available space.
+                          SingleChildScrollView(
+                            scrollDirection: Axis.vertical,
+                            // At 1.0 the board is fitted, so vertical dragging stays
+                            // available for drag-to-play. Zoomed in, the board is
+                            // taller than the viewport and needs to pan.
+                            physics: _zoom > 1.0
+                                ? const ClampingScrollPhysics()
+                                : const NeverScrollableScrollPhysics(),
+                            child: SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              controller: _canvasScrollController,
+                              child: WhiteboardCanvas(
+                                key: _previewCanvasKey,
+                                notes: _parsed.notes,
+                                layout: layout,
+                                // Maximum diameter — actual size shrinks to fit
+                                // pitch range on narrow viewports. Phones end up at
+                                // the pitch-axis ceiling (~35-40 px), iPads grow
+                                // into the 80-110 range, desktops cap at 120.
+                                tokenSize: 120.0,
+                                fitToSize: Size(
+                                  constraints.maxWidth - 24,
+                                  constraints.maxHeight - 24,
+                                ),
+                                zoom: _zoom,
+                                title: _titleController.text.trim(),
+                                justify: _justify,
+                                onNoteDown: _onNoteDown,
+                                onNoteUp: _onNoteUp,
+                                playingIndex: _playIndex,
+                                playingColumn: _playColumn,
+                                theme: _theme,
+                                shape: _shape,
+                              ),
+                            ),
+                          ),
+                          // Help panel — slides in from the right edge of the
+                          // canvas, leaving the left side (where solfège
+                          // typically lives, especially before auto-scroll
+                          // kicks in) unobstructed.
+                          AnimatedPositioned(
+                            duration: const Duration(milliseconds: 220),
+                            curve: Curves.easeOutCubic,
+                            right: _isHelpVisible ? 0 : -helpPanelWidth,
+                            top: 0,
+                            bottom: 0,
+                            width: helpPanelWidth,
+                            child: Material(
+                              color: ToneTokenColors.getColor(7), // so blue
+                              elevation: 8,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  border:
+                                      Border.all(color: Colors.white, width: 2),
+                                ),
+                                child: _buildHelpPanel(),
+                              ),
+                            ),
+                          ),
+                          // On-screen step buttons during arrow-play. Always shown
+                          // when arrow-play is engaged — phones and tablets need
+                          // them (no keyboard); desktop users get an extra,
+                          // unobtrusive way to step beyond the ← / → keys.
+                          if (_playEngaged) ...[
+                            Positioned(
+                              left: 12,
+                              top: 0,
+                              bottom: 0,
+                              child: Center(
+                                child: _PlayStepButton(
+                                  icon: Icons.arrow_back,
+                                  onPressed: () => _stepPlay(-1),
+                                ),
+                              ),
+                            ),
+                            Positioned(
+                              right: 12,
+                              top: 0,
+                              bottom: 0,
+                              child: Center(
+                                child: _PlayStepButton(
+                                  icon: Icons.arrow_forward,
+                                  onPressed: () => _stepPlay(1),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      );
+                    },
+                  ),
+                ),
+              ],
             ),
-          ),
-            ],
-          ),
-          // Full-res canvas for PNG export — positioned off-screen so it
-          // lays out at full intrinsic size and gets fully painted, but is
-          // never visible. Stack's clipBehavior hides the overflow.
-          Positioned(
-            left: -canvasSize.width - 100,
-            top: -canvasSize.height - 100,
-            width: canvasSize.width,
-            height: canvasSize.height,
-            child: RepaintBoundary(
-              key: _canvasKey,
-              child: WhiteboardCanvas(
-                notes: _parsed.notes,
-                layout: layout,
-                title: _titleController.text.trim(),
-                justify: _justify,
-                theme: _forceExportLight ? SolfegeHexTheme.light : _theme,
-                shape: _shape,
-                respectLineBreaks: true,
-                sizeOverride: _exportSizeOverride,
-              ),
-            ),
-          ),
-          // Off-screen print pages for the multi-page PDF export. One
-          // RepaintBoundary per page; captured individually then assembled.
-          if (_printJob != null)
+            // Full-res canvas for PNG export — positioned off-screen so it
+            // lays out at full intrinsic size and gets fully painted, but is
+            // never visible. Stack's clipBehavior hides the overflow.
             Positioned(
-              left: -_printMetrics.pageWidth - 100,
-              top: -100,
-              child: Column(
-                children: [
-                  for (var i = 0; i < _printJob!.pages.length; i++)
-                    RepaintBoundary(
-                      key: _printPageKeys[i],
-                      child: PrintScorePage(
-                        metrics: _printMetrics,
-                        page: _printJob!.pages[i],
-                        pageIndex: i,
-                        title: _titleController.text.trim(),
-                        shape: _shape,
-                      ),
-                    ),
-                ],
+              left: -canvasSize.width - 100,
+              top: -canvasSize.height - 100,
+              width: canvasSize.width,
+              height: canvasSize.height,
+              child: RepaintBoundary(
+                key: _canvasKey,
+                child: WhiteboardCanvas(
+                  notes: _parsed.notes,
+                  layout: layout,
+                  title: _titleController.text.trim(),
+                  justify: _justify,
+                  theme: _forceExportLight ? SolfegeHexTheme.light : _theme,
+                  shape: _shape,
+                  respectLineBreaks: true,
+                  sizeOverride: _exportSizeOverride,
+                ),
               ),
             ),
-        ],
+            // Off-screen print pages for the multi-page PDF export. One
+            // RepaintBoundary per page; captured individually then assembled.
+            if (_printJob != null)
+              Positioned(
+                left: -_printMetrics.pageWidth - 100,
+                top: -100,
+                child: Column(
+                  children: [
+                    for (var i = 0; i < _printJob!.pages.length; i++)
+                      RepaintBoundary(
+                        key: _printPageKeys[i],
+                        child: PrintScorePage(
+                          metrics: _printMetrics,
+                          page: _printJob!.pages[i],
+                          pageIndex: i,
+                          title: _titleController.text.trim(),
+                          shape: _shape,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+          ],
+        ),
       ),
-      ),
+    );
+  }
+
+  /// Board size control: shrink / grow the tokens on screen. "Fit" (1.0)
+  /// is the old behaviour — the board sized to the viewport. Tapping the
+  /// percentage returns to Fit.
+  Widget _zoomControl() {
+    final dim = Colors.grey[500];
+    Widget btn(
+        IconData icon, String tip, VoidCallback onPressed, bool enabled) {
+      return IconButton(
+        tooltip: tip,
+        iconSize: 18,
+        visualDensity: VisualDensity.compact,
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+        icon: Icon(icon, color: enabled ? dim : Colors.grey[800]),
+        onPressed: enabled ? onPressed : null,
+      );
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text('board', style: TextStyle(fontSize: 11, color: Colors.grey[600])),
+        const SizedBox(width: 4),
+        btn(Icons.remove, 'Smaller tokens', () => _setZoom(_zoom - _zoomStep),
+            _zoom > _zoomMin),
+        InkWell(
+          onTap: () => _setZoom(1.0),
+          borderRadius: BorderRadius.circular(4),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            child: Text(
+              _zoom == 1.0 ? 'Fit' : '${(_zoom * 100).round()}%',
+              style: TextStyle(fontSize: 12, color: dim),
+            ),
+          ),
+        ),
+        btn(Icons.add, 'Bigger tokens', () => _setZoom(_zoom + _zoomStep),
+            _zoom < _zoomMax),
+      ],
     );
   }
 
@@ -1505,7 +1544,8 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
       return 'Type syllables separated by spaces.';
     }
     final parts = <String>[];
-    parts.add('${_parsed.notes.length} note${_parsed.notes.length == 1 ? '' : 's'}');
+    parts.add(
+        '${_parsed.notes.length} note${_parsed.notes.length == 1 ? '' : 's'}');
     if (_parsed.unrecognized.isNotEmpty) {
       parts.add('unrecognized: ${_parsed.unrecognized.join(', ')}');
     }
